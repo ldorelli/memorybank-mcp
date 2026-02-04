@@ -76,6 +76,13 @@ async function authMiddleware(req, res, next) {
 
 const AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'https://localhost:3000';
 
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
+    res.json({
+        authorization_servers: [AUTH_SERVER_URL],
+        scopes_supported: ["openid", "profile", "email"]
+    });
+});
+
 // MCP Server Initialization
 const server = new McpServer({
     name: "MemoryBank",
