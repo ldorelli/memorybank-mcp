@@ -329,6 +329,7 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
         issuer: baseUrl,
         authorization_endpoint: `${baseUrl}/auth`,
         token_endpoint: `${baseUrl}/token`,
+        registration_endpoint: `${baseUrl}/reg`,
         jwks_uri: `${baseUrl}/jwks`,
         token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
         response_types_supported: ['code'],
