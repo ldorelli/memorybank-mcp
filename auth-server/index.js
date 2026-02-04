@@ -231,8 +231,6 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
     try {
         const { uid } = req.params;
         const details = await oidc.interactionDetails(req, res);
-        console.log(`DEBUG: Interaction Details for ${uid}`);
-        console.log(`DEBUG: Interaction Details returnTo: ${details.returnTo}`);
 
         const { email, password } = req.body;
 
@@ -321,6 +319,11 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
 // Debug Listener
 oidc.on('server_error', (ctx, err) => {
     console.error('SERVER ERROR:', err);
+});
+
+// Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+    res.redirect('/.well-known/openid-configuration');
 });
 
 app.use(oidc.callback());
