@@ -39,6 +39,8 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
 app.enable('trust proxy'); // Required for Railway/Load Balancers
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
 // Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
 // PLACED HERE to ensure it hits before any middleware or other routes
