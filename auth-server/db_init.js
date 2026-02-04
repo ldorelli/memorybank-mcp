@@ -14,7 +14,7 @@ const pool = new Pool({
 export async function initializeDatabase() {
     console.log("Checking database schema...");
     try {
-        const sqlPath = path.join(__dirname, '../init.sql'); // init.sql is in root
+        const sqlPath = path.join(__dirname, 'init.sql'); // init.sql copied to root of container
         const sql = fs.readFileSync(sqlPath, 'utf8');
         await pool.query(sql);
         console.log("Database schema applied successfully.");
