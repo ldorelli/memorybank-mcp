@@ -8,6 +8,26 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import https from 'https';
+import crypto from 'node:crypto'; // For password hashing
+import { promisify } from 'util';
+const scrypt = promisify(crypto.scrypt);
+
+// Password Helpers
+async function hashPassword(password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const derivedKey = await scrypt(password, salt, 64);
+    return `${salt}:${derivedKey.toString('hex')}`;
+}
+
+async function verifyPassword(password, storedHash) {
+    // If we have "placeholder_hash" from mvp, treat as invalid or skip
+    if (storedHash === 'placeholder_hash') return true; // BACKWARDS COMPATIBILITY for development
+
+    const [salt, key] = storedHash.split(':');
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = await scrypt(password, salt, 64);
+    return crypto.timingSafeEqual(keyBuffer, derivedKey);
+}
 
 const { Pool } = pg;
 import { initializeDatabase } from './db_init.js';
@@ -57,6 +77,7 @@ const findAccount = async (ctx, id) => {
     };
 };
 
+
 const configuration = {
     clients: [{
         client_id: 'mcp_client',
@@ -68,12 +89,12 @@ const configuration = {
     cookies: {
         keys: process.env.COOKIE_KEYS ? process.env.COOKIE_KEYS.split(',') : ['fallback_dev_key_dont_use_in_prod'],
         short: {
-            secure: true,
+            secure: isProd,
             sameSite: 'Lax',
             path: '/'
         },
         long: {
-            secure: true,
+            secure: isProd,
             sameSite: 'Lax',
             path: '/'
         },
@@ -155,6 +176,55 @@ app.get('/interaction/:uid', async (req, res, next) => {
     }
 });
 
+// GET /signup
+app.get('/interaction/:uid/signup', async (req, res, next) => {
+    try {
+        const { uid } = req.params;
+        const details = await oidc.interactionDetails(req, res);
+        return res.render('signup', {
+            uid,
+            client: details.params.client_id,
+            flash: undefined
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// POST /signup
+app.post('/interaction/:uid/signup', async (req, res, next) => {
+    try {
+        const { uid } = req.params;
+        const details = await oidc.interactionDetails(req, res);
+        const { email, password } = req.body;
+
+        // Check availability
+        const check = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (check.rows.length > 0) {
+            return res.render('signup', {
+                uid, client: details.params.client_id,
+                flash: 'Email already registered. Please sign in.'
+            });
+        }
+
+        // Hash & Create
+        const hash = await hashPassword(password);
+        const newUser = await pool.query(
+            'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *',
+            [email, hash]
+        );
+
+        const result = {
+            login: { accountId: newUser.rows[0].id },
+        };
+
+        await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: false });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
 app.post('/interaction/:uid/login', async (req, res, next) => {
     try {
         const { uid } = req.params;
@@ -166,6 +236,7 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
 
         // Verify User
         const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+
         if (userRes.rows.length === 0) {
             return res.render('login', {
                 uid, client: {}, details: {}, params: {},
@@ -175,7 +246,16 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
         }
 
         const user = userRes.rows[0];
-        // NOTE: Password check skipped for MVP (accepts any password for existing user)
+
+        // Check Password
+        const isValid = await verifyPassword(password, user.password_hash);
+        if (!isValid) {
+            return res.render('login', {
+                uid, client: {}, details: {}, params: {},
+                title: 'Sign-in',
+                flash: 'Invalid email or password'
+            });
+        }
 
         const result = {
             login: { accountId: user.id },
@@ -245,16 +325,8 @@ app.use(oidc.callback());
 
 // HTTPS Start
 // HTTPS Start or HTTP for Production (Railway handles SSL)
-if (process.env.NODE_ENV === 'production') {
-    const port = process.env.PORT || 3000;
-    app.listen(port, () => {
-        console.log(`oidc-provider listening on port ${port} (HTTP), proxying to issuer ${issuer}`);
-    });
-} else {
-    const key = fs.readFileSync(path.join(__dirname, 'server.key'));
-    const cert = fs.readFileSync(path.join(__dirname, 'server.cert'));
-
-    https.createServer({ key, cert }, app).listen(3000, () => {
-        console.log('oidc-provider listening on port 3000 (HTTPS), check https://localhost:3000/.well-known/openid-configuration');
-    });
-}
+// Universal HTTP Start (Railway handles SSL, Localhost uses HTTP)
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+    console.log(`oidc-provider listening on port ${port} (HTTP), issuer: ${issuer}`);
+});

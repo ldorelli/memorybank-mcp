@@ -19,7 +19,7 @@ services:
     build: ./auth-server
     environment:
       PORT: 3000
-      NODE_ENV: production
+      NODE_ENV: development
       # Construct DB URL using service name 'db' instead of localhost
       DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
       # Browser-facing Issuer URL (what the user sees)

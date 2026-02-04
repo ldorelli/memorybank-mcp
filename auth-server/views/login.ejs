@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,16 +8,20 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
+
         body {
             font-family: 'Outfit', sans-serif;
-            background: #0f172a; /* Slate 900 */
+            background: #0f172a;
+            /* Slate 900 */
         }
+
         .glass {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
+
         .gradient-text {
             background: linear-gradient(to right, #38bdf8, #818cf8);
             -webkit-background-clip: text;
@@ -25,51 +30,60 @@
         }
     </style>
 </head>
+
 <body class="flex items-center justify-center min-h-screen text-slate-200">
 
     <div class="glass p-8 rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden">
         <!-- Decoration -->
-        <div class="absolute -top-10 -left-10 w-40 h-40 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-        <div class="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div
+            class="absolute -top-10 -left-10 w-40 h-40 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob">
+        </div>
+        <div
+            class="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000">
+        </div>
 
         <div class="relative z-10">
-            <h1 class="text-3xl font-semibold text-center mb-2">Welcome to <span class="gradient-text font-bold">MemoryBank</span></h1>
+            <h1 class="text-3xl font-semibold text-center mb-2">Welcome to <span
+                    class="gradient-text font-bold">MemoryBank</span></h1>
             <p class="text-center text-slate-400 mb-8 text-sm">Secure your digital memory.</p>
 
             <form action="/interaction/<%= uid %>/login" method="POST" class="space-y-6">
                 <div>
                     <label for="email" class="block text-sm font-medium text-slate-300 mb-1">Email Address</label>
-                    <input type="email" name="email" id="email" required 
+                    <input type="email" name="email" id="email" required
                         class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder-slate-500 text-slate-200"
                         placeholder="you@example.com">
                 </div>
 
                 <div>
                     <label for="password" class="block text-sm font-medium text-slate-300 mb-1">Password</label>
-                    <input type="password" name="password" id="password" required 
+                    <input type="password" name="password" id="password" required
                         class="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder-slate-500 text-slate-200"
                         placeholder="••••••••">
                 </div>
 
                 <div class="flex items-center justify-between text-sm">
                     <label class="flex items-center text-slate-400">
-                        <input type="checkbox" class="form-checkbox h-4 w-4 text-blue-500 rounded bg-slate-800 border-slate-700 focus:ring-offset-slate-900">
+                        <input type="checkbox"
+                            class="form-checkbox h-4 w-4 text-blue-500 rounded bg-slate-800 border-slate-700 focus:ring-offset-slate-900">
                         <span class="ml-2">Remember me</span>
                     </label>
                     <a href="#" class="text-blue-400 hover:text-blue-300 transition-colors">Forgot password?</a>
                 </div>
 
-                <button type="submit" 
+                <button type="submit"
                     class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5">
                     Sign In to MemoryBank
                 </button>
             </form>
 
             <div class="mt-6 text-center text-sm text-slate-500">
-                Don't have an account? <a href="#" class="text-blue-400 hover:text-blue-300">Create one</a>
+                Don't have an account? <a href="/interaction/<%= uid %>/signup"
+                    class="text-blue-400 hover:text-blue-300">Create one</a>
             </div>
         </div>
     </div>
 
 </body>
+
 </html>
