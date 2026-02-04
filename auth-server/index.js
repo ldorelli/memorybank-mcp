@@ -10,13 +10,18 @@ import fs from 'fs';
 import https from 'https';
 
 const { Pool } = pg;
+import { initializeDatabase } from './db_init.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
-app.set('trust proxy', true);
+app.enable('trust proxy'); // Required for Railway/Load Balancers
+
+// Initialize DB Schema
+await initializeDatabase();
 
 // CRITICAL FIX: Monkey-patch res.send to intercept and rewrite Set-Cookie headers
 // Middleware removed. Relies on correct configuration in cookies object.
