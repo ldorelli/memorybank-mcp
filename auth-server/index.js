@@ -20,6 +20,14 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 const app = express();
 app.enable('trust proxy'); // Required for Railway/Load Balancers
 
+// Force HTTPS in production (Railway LB terminates SSL)
+if (process.env.NODE_ENV === 'production') {
+    app.use((req, res, next) => {
+        req.headers['x-forwarded-proto'] = 'https';
+        next();
+    });
+}
+
 // Initialize DB Schema
 await initializeDatabase();
 
