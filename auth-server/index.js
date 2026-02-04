@@ -323,7 +323,19 @@ oidc.on('server_error', (ctx, err) => {
 
 // Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
 app.get('/.well-known/oauth-authorization-server', (req, res) => {
-    res.redirect('/.well-known/openid-configuration');
+    // RFC 8414 requires 200 OK (no redirects)
+    const baseUrl = issuer.replace(/\/$/, ''); // Ensure no trailing slash
+    res.json({
+        issuer: baseUrl,
+        authorization_endpoint: `${baseUrl}/auth`,
+        token_endpoint: `${baseUrl}/token`,
+        jwks_uri: `${baseUrl}/jwks`,
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        response_types_supported: ['code'],
+        response_modes_supported: ['query', 'fragment'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+    });
 });
 
 app.use(oidc.callback());
