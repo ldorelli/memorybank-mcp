@@ -21,9 +21,14 @@ const app = express();
 app.enable('trust proxy'); // Required for Railway/Load Balancers
 
 // Force HTTPS in production (Railway LB terminates SSL)
+// FIX: We need to fool both Express (trust proxy) and the Cookies library (req.connection.encrypted)
 if (process.env.NODE_ENV === 'production') {
     app.use((req, res, next) => {
         req.headers['x-forwarded-proto'] = 'https';
+        // Brute force: Tell node we are encrypted even if not
+        if (!req.connection.encrypted) {
+            req.connection.encrypted = true;
+        }
         next();
     });
 }
