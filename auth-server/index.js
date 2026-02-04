@@ -78,6 +78,8 @@ const findAccount = async (ctx, id) => {
 };
 
 
+const isProd = process.env.NODE_ENV === 'production';
+
 const configuration = {
     clients: [{
         client_id: 'mcp_client',
