@@ -40,6 +40,31 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 const app = express();
 app.enable('trust proxy'); // Required for Railway/Load Balancers
 
+// Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
+// PLACED HERE to ensure it hits before any middleware or other routes
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+    console.log('Serving RFC 8414 Metadata');
+    // RFC 8414 Section 3.2: MUST support CORS
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Content-Type', 'application/json');
+
+    const baseUrl = issuer.replace(/\/$/, '');
+    res.json({
+        issuer: baseUrl,
+        authorization_endpoint: `${baseUrl}/auth`,
+        token_endpoint: `${baseUrl}/token`,
+        registration_endpoint: `${baseUrl}/reg`, // RFC 7591
+        jwks_uri: `${baseUrl}/jwks`,
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        response_types_supported: ['code'],
+        response_modes_supported: ['query', 'fragment'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+        revocation_endpoint: `${baseUrl}/token/revocation`,
+        introspection_endpoint: `${baseUrl}/token/introspection`,
+    });
+});
+
 // Force HTTPS in production (Railway LB terminates SSL)
 // FIX: We need to fool both Express (trust proxy) and the Cookies library (req.connection.encrypted)
 if (process.env.NODE_ENV === 'production') {
@@ -319,24 +344,6 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
 // Debug Listener
 oidc.on('server_error', (ctx, err) => {
     console.error('SERVER ERROR:', err);
-});
-
-// Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
-app.get('/.well-known/oauth-authorization-server', (req, res) => {
-    // RFC 8414 requires 200 OK (no redirects)
-    const baseUrl = issuer.replace(/\/$/, ''); // Ensure no trailing slash
-    res.json({
-        issuer: baseUrl,
-        authorization_endpoint: `${baseUrl}/auth`,
-        token_endpoint: `${baseUrl}/token`,
-        registration_endpoint: `${baseUrl}/reg`,
-        jwks_uri: `${baseUrl}/jwks`,
-        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
-        response_types_supported: ['code'],
-        response_modes_supported: ['query', 'fragment'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
-        scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
-    });
 });
 
 app.use(oidc.callback());
