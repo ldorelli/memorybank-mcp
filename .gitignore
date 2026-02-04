@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment Variables
+.env
+.env.*
+
+# Secrets and Keys
+*.key
+*.cert
+*.pem
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+debug/
+
+# Docker Local Volumes
+postgres_data/
+
+# OS Files
+.DS_Store
+Thumbs.db
+cookies*.txt

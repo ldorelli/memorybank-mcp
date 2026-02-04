@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = ""
+healthcheckPath = "/.well-known/openid-configuration"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"

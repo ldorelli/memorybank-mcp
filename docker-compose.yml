@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - memorybank-net
+
+  auth-server:
+    build: ./auth-server
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      # Construct DB URL using service name 'db' instead of localhost
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
+      # Browser-facing Issuer URL (what the user sees)
+      ISSUER: http://localhost:3000
+      # Keys for signing cookies
+      COOKIE_KEYS: ${COOKIE_KEYS}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    networks:
+      - memorybank-net
+
+  mcp-server:
+    build: ./mcp-server
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
+      # Browser-facing URL for capabilities (Discovery)
+      AUTH_SERVER_URL: http://localhost:3000
+      # Internal URL for fetching method/keys (Server-to-Server)
+      JWKS_URL: http://auth-server:3000/jwks
+    ports:
+      - "3001:3001"
+    depends_on:
+      - db
+      - auth-server
+    networks:
+      - memorybank-net
+
+networks:
+  memorybank-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
