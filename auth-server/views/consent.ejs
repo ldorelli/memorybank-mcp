@@ -52,22 +52,19 @@
             </p>
 
             <div class="bg-slate-800/50 rounded-lg p-4 mb-8">
-                <h3 class="text-sm font-semibold text-slate-300 mb-2">Capabilities</h3>
+                <h3 class="text-sm font-semibold text-slate-300 mb-2">This app is requesting permission to:</h3>
                 <ul class="list-disc list-inside text-sm text-slate-400 space-y-1">
-                    <% if (details.missingOIDCScope) { %>
-                        <% details.missingOIDCScope.forEach(scope=> { %>
-                            <li>
-                                <%= scope %>
-                            </li>
-                            <% }) %>
-                                <% } %>
-                                    <% if (details.missingOIDCClaims) { %>
-                                        <% details.missingOIDCClaims.forEach(claim=> { %>
-                                            <li>
-                                                <%= claim %>
-                                            </li>
-                                            <% }) %>
-                                                <% } %>
+                    <% // Show friendly scope names const scopeFriendlyNames={ 'openid' : 'View your basic profile'
+                        , 'email' : 'View your email address' , 'offline_access' : 'Maintain access when you\' re
+                        away', 'memories:read' : '📖 Read your memories' , 'memories:write'
+                        : '✏️ Create and edit memories' }; // Get scopes from params const requestedScopes=(params.scope
+                        || '' ).split(' ').filter(s => s);
+                    requestedScopes.forEach(scope => { 
+                    %>
+                        <li class="py-1">
+                            <%= scopeFriendlyNames[scope] || scope %>
+                        </li>
+                    <% }); %>
                 </ul>
             </div>
 

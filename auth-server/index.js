@@ -107,44 +107,23 @@ const findAccount = async (ctx, id) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// Default scopes to grant when client doesn't request any
-// This emulates real OAuth2 servers (like Uber, Spotify, etc.) that grant default scopes
-const DEFAULT_SCOPES = 'openid';
+// Default scopes for MemoryBank MCP - these will be displayed on consent screen
+const DEFAULT_SCOPES = 'openid memories:read memories:write';
 
 const configuration = {
-    // Using default interaction policy
+    // Interaction policy - display consent screen
     interactions: {
         url(ctx, interaction) {
             return `/interaction/${interaction.uid}`;
         },
     },
-    // Auto-grant default scopes when client doesn't request any
-    // This is key for MCP clients that don't send scope parameter
-    async loadExistingGrant(ctx) {
-        const grantId = ctx.oidc.session?.grantIdFor(ctx.oidc.client.clientId);
-
-        if (grantId) {
-            // Return existing grant
-            const grant = await ctx.oidc.provider.Grant.find(grantId);
-            if (grant) {
-                console.log('DEBUG: loadExistingGrant - found existing grant:', grantId);
-                return grant;
-            }
-        }
-
-        // No existing grant - create one with default scopes
-        // This is the key fix: auto-grant when no scopes are requested
-        const grant = new ctx.oidc.provider.Grant({
-            accountId: ctx.oidc.session.accountId,
-            clientId: ctx.oidc.client.clientId,
-        });
-
-        // Grant default scopes (openid at minimum)
-        grant.addOIDCScope(DEFAULT_SCOPES);
-        console.log('DEBUG: loadExistingGrant - created new grant with default scopes:', DEFAULT_SCOPES);
-
-        await grant.save();
-        return grant;
+    // Define custom scopes for MemoryBank
+    scopes: ['openid', 'offline_access', 'memories:read', 'memories:write'],
+    // Custom claims (standard OIDC + our custom ones)
+    claims: {
+        openid: ['sub', 'email'],
+        'memories:read': ['memory_access'],
+        'memories:write': ['memory_access'],
     },
     clients: [{
         client_id: 'mcp_client',
@@ -152,6 +131,7 @@ const configuration = {
         grant_types: ['authorization_code'],
         redirect_uris: ['https://oauth.pstmn.io/v1/callback'],
         response_types: ['code'],
+        scope: DEFAULT_SCOPES, // default scopes for this client
     }],
     cookies: {
         keys: process.env.COOKIE_KEYS ? process.env.COOKIE_KEYS.split(',') : ['fallback_dev_key_dont_use_in_prod'],
@@ -170,9 +150,6 @@ const configuration = {
     pkce: { required: () => false }, // simplified for MVP
     adapter: pgAdapter,
     findAccount,
-    claims: {
-        openid: ['sub', 'email'],
-    },
     features: {
         devInteractions: { enabled: false }, // we use our own interaction routes
         registration: { enabled: true, initialAccessToken: false }, // Allow dynamic client registration
@@ -196,11 +173,24 @@ const configuration = {
         ]
     }
 };
-// configuration.jwks is now preserved to ensure stable signing across restarts
 
 // USE HTTPS for localhost to allow verification of Secure cookies
 const issuer = process.env.ISSUER || 'https://localhost:3000';
 const oidc = new Provider(issuer, configuration);
+
+// Middleware to inject default scopes into authorization requests
+// This is the key fix: if client doesn't request scopes, add our defaults
+oidc.use(async (ctx, next) => {
+    // Only intercept authorization endpoint
+    if (ctx.path === '/auth' && ctx.method === 'GET') {
+        // If no scope parameter, inject our defaults
+        if (!ctx.query.scope) {
+            console.log('DEBUG: No scope in request, injecting defaults:', DEFAULT_SCOPES);
+            ctx.query.scope = DEFAULT_SCOPES;
+        }
+    }
+    await next();
+});
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -365,13 +355,31 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
             });
         }
 
-        // Add scopes if they were requested (only add what was actually requested)
+        // Add all requested OIDC scopes (openid, offline_access, etc.)
         if (details?.missingOIDCScope?.length) {
-            grant.addOIDCScope(details.missingOIDCScope.join(' '));
+            const oidcScopes = details.missingOIDCScope.join(' ');
+            console.log('DEBUG: Adding OIDC scopes:', oidcScopes);
+            grant.addOIDCScope(oidcScopes);
         }
+
+        // Add custom scopes (memories:read, memories:write) if in missing scopes
+        // Custom scopes in oidc-provider are treated as "resource scopes" or need special handling
+        const requestedScope = params.scope || '';
+        const customScopes = requestedScope.split(' ')
+            .filter(s => s.startsWith('memories:'));
+
+        if (customScopes.length > 0) {
+            console.log('DEBUG: Adding custom scopes:', customScopes.join(' '));
+            // Add custom scopes as OIDC scopes (oidc-provider allows this for non-RS256 scopes)
+            grant.addOIDCScope(customScopes.join(' '));
+        }
+
+        // Add any missing OIDC claims
         if (details?.missingOIDCClaims?.length) {
             grant.addOIDCClaims(details.missingOIDCClaims);
         }
+
+        // Add any resource scopes
         if (details?.missingResourceScopes) {
             for (const [indicator, scopes] of Object.entries(details.missingResourceScopes)) {
                 grant.addResourceScope(indicator, scopes.join(' '));
