@@ -278,10 +278,26 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', server: 'memorybank-mcp', version: '1.0.0' });
 });
 
+// Root endpoint - provide server info and available endpoints
+app.get('/', (req, res) => {
+    res.json({
+        name: "memorybank",
+        version: "1.0.0",
+        title: "MemoryBank MCP Server",
+        description: "A personal memory and notes management server.",
+        endpoints: {
+            sse: "/mcp",
+            messages: "/mcp/messages",
+            health: "/health",
+            oauth_metadata: "/.well-known/oauth-protected-resource"
+        }
+    });
+});
+
 // Session management for SSE
 const sessions = new Map();
 
-// SSE Endpoint - Main MCP connection
+// SSE Endpoint - Main MCP connection (at /mcp)
 app.get('/mcp', authMiddleware, async (req, res) => {
     const transport = new SSEServerTransport("/mcp/messages", res);
     const sessionId = transport.sessionId || Date.now().toString();
@@ -290,6 +306,22 @@ app.get('/mcp', authMiddleware, async (req, res) => {
     console.log(`📡 Session ${sessionId} connected (user: ${req.user?.sub || 'unknown'})`);
 
     // Clean up on close
+    res.on('close', () => {
+        console.log(`📴 Session ${sessionId} closed`);
+        sessions.delete(sessionId);
+    });
+
+    await server.connect(transport);
+});
+
+// Alias: /sse for clients expecting SSE at /sse
+app.get('/sse', authMiddleware, async (req, res) => {
+    const transport = new SSEServerTransport("/messages", res);
+    const sessionId = transport.sessionId || Date.now().toString();
+
+    sessions.set(sessionId, transport);
+    console.log(`📡 Session ${sessionId} connected via /sse (user: ${req.user?.sub || 'unknown'})`);
+
     res.on('close', () => {
         console.log(`📴 Session ${sessionId} closed`);
         sessions.delete(sessionId);
@@ -307,6 +339,27 @@ app.post('/mcp/messages', authMiddleware, async (req, res) => {
         transport = sessions.get(sessionId);
     } else {
         // Fallback to the last created session for single-client demo
+        const keys = Array.from(sessions.keys());
+        if (keys.length > 0) {
+            transport = sessions.get(keys[keys.length - 1]);
+        }
+    }
+
+    if (!transport) {
+        return res.status(404).json({ error: "Session not found. Please reconnect." });
+    }
+
+    await transport.handlePostMessage(req, res);
+});
+
+// Alias: /messages for clients using /sse
+app.post('/messages', authMiddleware, async (req, res) => {
+    const sessionId = req.query.sessionId;
+    let transport;
+
+    if (sessionId && sessions.has(sessionId)) {
+        transport = sessions.get(sessionId);
+    } else {
         const keys = Array.from(sessions.keys());
         if (keys.length > 0) {
             transport = sessions.get(keys[keys.length - 1]);
