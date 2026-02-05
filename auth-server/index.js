@@ -154,23 +154,29 @@ const configuration = {
         devInteractions: { enabled: false }, // we use our own interaction routes
         registration: { enabled: true, initialAccessToken: false }, // Allow dynamic client registration
     },
-    // Simplified JWKS config for dev
+    // JWKS loaded from environment variable for security
+    // Set JWKS_PRIVATE_KEY env var to a JSON string of the key
+    // Generate one with: node -e "const crypto=require('crypto'); const {privateKey}=crypto.generateKeyPairSync('rsa',{modulusLength:2048}); const jwk=privateKey.export({format:'jwk'}); jwk.use='sig'; jwk.kid='memorybank-key'; jwk.alg='RS256'; console.log(JSON.stringify(jwk));"
     jwks: {
-        keys: [
-            {
-                d: 'VEZOsY07JTFzGTqv6cC2YJcbg5pFKgVv2EmJGfc6-88',
-                dp: 'E1Y-SN4bQqX7kP-bNgZ_gY6qZ1ktsn5_u8kM8z8z4_8',
-                dq: 'HCD9t6j_n7-a5-x8z8z8z8z8z8z8z8z8z8z8z8z8z8',
-                e: 'AQAB',
-                kty: 'RSA',
-                n: 'x_7-a5-x8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8',
-                p: '8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8',
-                q: '8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8',
-                qi: '8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8z8',
-                use: 'sig',
-                kid: 'memorybank-signing-key'
-            }
-        ]
+        keys: process.env.JWKS_PRIVATE_KEY
+            ? [JSON.parse(process.env.JWKS_PRIVATE_KEY)]
+            : (() => {
+                console.warn('⚠️  WARNING: Using development JWKS key. Set JWKS_PRIVATE_KEY in production!');
+                return [{
+                    kty: 'RSA',
+                    n: '0l3t-FdA6fKylv3R9hDfSVW-HU5Lp0CV40N1_A584bV7ydUPuxZwN-DZBsSix5EB1taJ6zS03d1RmLtpnnkSZnpGrxkR3vLxng_1O7s7pnCy8SqkZpt2b8O5UkYr7w0ZTcNoFZgObtLRLMWb3jAia1BeN3CPe-ocQXyH3DtLu7i9dixqLumwaBlKrKqFrwmh6tFaRtJQ1Y5QhDkV4mnVbh8j6P3MT2r2WpJvyFCa_lTkzjAfc1kqQpWApG2J4dEAG41yXnWqHgGGsn67ec9rzMXeYtU7vqpHdvYEQOfAr9a_pL5j5V5fOspD-lDrVTmHzMHJFDLdYw-7MuhFPehGBQ',
+                    e: 'AQAB',
+                    d: 'Dyr2nZFXp4ai7yrImMAJWXWf35JlogmQxRzNb6nGbKpz4nmaSMMKvvysqUWZobSy4pVVccAQdRl1aK3FT8fVq83lNXrOmbn_8dr0s6SBszPXsyEqpBCm2X14lJYP_4x85pPQTWjz9smnNgiJfzEOn5jhMjN2JQPG8HHU2exB6ab8KCc0c9tOI_rXN9wx9coJK45hC-pTRc8o-VaDeHPCfnr5fcbFqB_XN-uhEqYbsb8jxDLr9IunW25EekMi5o7ZvCFBcb5j8NhoVDVERpIcLf_8b2RnKVx-ITYQX3Ei9tBDHZte_w9j1bnYPSzPvsw7jrFFG69-kRtZ1LObxm4gAQ',
+                    p: '9YcVvMjqWWrymFyg65O-c2fr7wBOjAVF2Fm89AoaL3Zyc67JYHT_Rpniei9hLETh3uyHAT3N5sNKew3mziTEX5jMTj1oQ519fPZykSVugYZ4V1CeuWSbTWCRZB08Fn8W-53b7zPW3HhF_xSRxgjTfVWllHw6uxl-bzYM3dlBvMU',
+                    q: '21bsrRaNY72tBj9iECzY0XV8I-17uPW2nwBT2oh2D-MCEkgPQEh_Xrfdadgc4r3GOkma856YMu7OyHLc_atURJxz1j30iFlq-y6Y_zbZius0sQBA2EmuEL_F6YVADJOuLi7XFRFBbkHGi-KVape9mzWxYYtLqOaAhg_G3QZ_eEE',
+                    dp: 'Vd4QdB2wF-WXQkHi5YCeMq49jTCGR-HwM2Hu-0otLjw2es6-DsXcIUzgL-syCNFuTRBbhsuenv3dpnuOJLonE2fUy-gd9se1g2aNWsXEh_gHTkIbwKq2xbDoKCMxSIzZ9NWYfWeb1S8bC8Kd2Kxtin_RkMSBpb2cwjgc99lrbCE',
+                    dq: 'jmxcFGxvdNOGFWd0yqIES8YozL95Nfm_EnHJAT7YwqoZ_zrxREGPCzcCu6bL4uNtYw3GYuiZVYFBnmEPZFwqxL5-bSAft6WwVNfGGvpHue_OcByE_qyhLVkJLwAKPeBrGqvpl1F0Fh75yH1hnixXvv_XZUpo34yE6gg2jfCZNsE',
+                    qi: '2ivezOCsP8FlUH7ZO6AKqau1RIE7b8QPOAjIMrT8EpPV2D2W1tY951lrhFwFo4nA76FL8bfs4Ya1Rd9M9D8GkTHH4NlhhC-FkMsD5oa4Nsvj_CFiKkOCuLVwWBMVBxXgcwgMpjyT1_QFdqGKqavupILI57e1kaRBJpGfzTiIfnI',
+                    use: 'sig',
+                    kid: 'memorybank-dev-key',
+                    alg: 'RS256'
+                }];
+            })()
     }
 };
 
