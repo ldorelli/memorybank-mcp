@@ -107,6 +107,23 @@ const findAccount = async (ctx, id) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
+const { interactionPolicy: { Prompt, base: policy, Check } } = Provider;
+
+// Force Consent Policy
+const interactionPolicy = policy();
+const consentPrompt = interactionPolicy.get('consent');
+consentPrompt.checks.add(new Check('force_consent', 'Consent required', 'interaction_required', (ctx) => {
+    const { oidc } = ctx;
+    // Always trigger consent prompt if not already on it
+    if (oidc.promptPending('consent')) return false;
+    // Don't interrupt login
+    if (oidc.params.prompt === 'login') return false;
+
+    // Check if we already have a grant with these scopes?
+    // For now, let's force it to ensure the interstitial appears
+    return true;
+}));
+
 const configuration = {
     clients: [{
         client_id: 'mcp_client',
@@ -115,6 +132,12 @@ const configuration = {
         redirect_uris: ['https://oauth.pstmn.io/v1/callback'],
         response_types: ['code'],
     }],
+    interactions: {
+        policy: interactionPolicy,
+        url(ctx, interaction) {
+            return `/interaction/${interaction.uid}`;
+        },
+    },
     cookies: {
         keys: process.env.COOKIE_KEYS ? process.env.COOKIE_KEYS.split(',') : ['fallback_dev_key_dont_use_in_prod'],
         short: {
