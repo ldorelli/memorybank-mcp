@@ -332,8 +332,19 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
 
 app.post('/interaction/:uid/confirm', async (req, res, next) => {
     try {
+        console.log('DEBUG: /confirm route hit');
         const interactionDetails = await oidc.interactionDetails(req, res);
-        const { prompt: { name, details }, params, session: { accountId } } = interactionDetails;
+        console.log('DEBUG: Interaction details in /confirm:', JSON.stringify(interactionDetails, null, 2));
+
+        const { prompt: { name, details }, params, session } = interactionDetails;
+
+        // Ensure we have a session with accountId
+        if (!session?.accountId) {
+            console.error('DEBUG: No session.accountId in /confirm!');
+            return res.status(400).send('No session found');
+        }
+
+        const accountId = session.accountId;
         let grantId = interactionDetails.grantId;
 
         let grant;
@@ -349,19 +360,21 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
             });
         }
 
-        if (details.missingOIDCScope) {
+        // Add scopes (with null checks)
+        if (details?.missingOIDCScope?.length) {
             grant.addOIDCScope(details.missingOIDCScope.join(' '));
         }
-        if (details.missingOIDCClaims) {
+        if (details?.missingOIDCClaims?.length) {
             grant.addOIDCClaims(details.missingOIDCClaims);
         }
-        if (details.missingResourceScopes) {
+        if (details?.missingResourceScopes) {
             for (const [indicator, scopes] of Object.entries(details.missingResourceScopes)) {
                 grant.addResourceScope(indicator, scopes.join(' '));
             }
         }
 
         grantId = await grant.save();
+        console.log('DEBUG: Grant saved with ID:', grantId);
 
         const consent = {};
         if (!interactionDetails.grantId) {
@@ -370,8 +383,11 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
         }
 
         const result = { consent };
+        console.log('DEBUG: Finishing interaction with result:', JSON.stringify(result));
         await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: true });
+        console.log('DEBUG: interactionFinished completed');
     } catch (err) {
+        console.error('DEBUG: Error in /confirm:', err);
         next(err);
     }
 });
