@@ -1,6 +1,22 @@
-# MemoryBank: Secure MCP & OAuth Server
+# MemoryBank MCP 🧠
 
-A secure architecture for storing and retrieving memory notes using MCP, consisting of an OIDC Auth Server and an MCP Server specifically designed for AI agents.
+> **A secure, personal memory vault for your AI assistants.**
+
+<div align="center">
+  <img src="./logo.png" alt="MemoryBank Logo" width="200" style="image-rendering: pixelated;">
+  <p><em>Secure. Private. Retro-Chic.</em></p>
+</div>
+
+MemoryBank allows LLMs (via Model Context Protocol) to store, retrieve, and organize "memories" about you in a secure PostgreSQL vault. It features a full OIDC Authentication Server with a custom **Pastel-Retro Pixel Art** UI.
+
+## Features
+
+- **🔐 Secure Authentication**: Custom OIDC Provider with JWT access tokens.
+- **🎨 Pastel-Retro UI**: Beautiful pixel-art themed Login, Signup, and Consent screens (`VT323` typography).
+- **🚀 Standalone Signup**: Direct account creation at `/signup`.
+- **🧠 Memory Tools**: `save_memory`, `list_memories`, `search_memories`, `delete_memory`.
+- **🔌 Universal Transport**: Supports both MCP Streamable HTTP (POST) and SSE (GET).
+ of an OIDC Auth Server and an MCP Server specifically designed for AI agents.
 
 ## Project Structure
 - `auth-server/`: OIDC Provider (Node.js + node-oidc-provider)
