@@ -128,13 +128,12 @@ const configuration = {
     clients: [{
         client_id: 'mcp_client',
         client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
-        grant_types: ['authorization_code', 'implicit'],
+        grant_types: ['authorization_code'],
         redirect_uris: [
             'https://oauth.pstmn.io/v1/callback',
-            'https://memorybank-mcp.up.railway.app/callback',
             'https://memorybank-mcp.up.railway.app/health'
         ],
-        response_types: ['code', 'token', 'id_token token'],
+        response_types: ['code'],
         scope: DEFAULT_SCOPES, // default scopes for this client
     }],
     cookies: {
