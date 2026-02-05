@@ -150,13 +150,28 @@ const configuration = {
     pkce: { required: () => false }, // simplified for MVP
     adapter: pgAdapter,
     findAccount,
-    // Issue JWT access tokens (not opaque) so MCP server can verify them
-    formats: {
-        accessToken: 'jwt',
-    },
     features: {
         devInteractions: { enabled: false }, // we use our own interaction routes
         registration: { enabled: true, initialAccessToken: false }, // Allow dynamic client registration
+        // Enable resource indicators to allow JWT access tokens
+        resourceIndicators: {
+            enabled: true,
+            // Default resource if none specified
+            defaultResource: (ctx) => {
+                return process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
+            },
+            // Return JWT format for all resources
+            getResourceServerInfo: (ctx, resourceIndicator, client) => {
+                return {
+                    scope: 'openid memories:read memories:write',
+                    audience: resourceIndicator,
+                    accessTokenFormat: 'jwt', // This makes access tokens JWT format
+                    accessTokenTTL: 3600, // 1 hour
+                };
+            },
+            // Use default resource for all grant types
+            useGrantedResource: (ctx, model) => true,
+        },
     },
     // JWKS loaded from environment variable for security
     // Set JWKS_PRIVATE_KEY env var to a JSON string of the key
