@@ -150,6 +150,10 @@ const configuration = {
     pkce: { required: () => false }, // simplified for MVP
     adapter: pgAdapter,
     findAccount,
+    // Issue JWT access tokens (not opaque) so MCP server can verify them
+    formats: {
+        accessToken: 'jwt',
+    },
     features: {
         devInteractions: { enabled: false }, // we use our own interaction routes
         registration: { enabled: true, initialAccessToken: false }, // Allow dynamic client registration
