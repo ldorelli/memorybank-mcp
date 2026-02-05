@@ -109,8 +109,8 @@ const isProd = process.env.NODE_ENV === 'production';
 
 // Force Consent Policy
 const { Prompt, base: policy, Check } = interactionPolicy;
-const interactionPolicy = policy();
-const consentPrompt = interactionPolicy.get('consent');
+const customPolicy = policy();
+const consentPrompt = customPolicy.get('consent');
 consentPrompt.checks.add(new Check('force_consent', 'Consent required', 'interaction_required', (ctx) => {
     const { oidc } = ctx;
     // Always trigger consent prompt if not already on it
@@ -132,7 +132,7 @@ const configuration = {
         response_types: ['code'],
     }],
     interactions: {
-        policy: interactionPolicy,
+        policy: customPolicy,
         url(ctx, interaction) {
             return `/interaction/${interaction.uid}`;
         },
