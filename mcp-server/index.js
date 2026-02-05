@@ -1,6 +1,6 @@
 import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -8,6 +8,7 @@ import pg from 'pg';
 import { z } from 'zod';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { randomUUID } from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -98,7 +99,6 @@ server.tool(
     },
     async ({ content, tags }) => {
         try {
-            // Get the first user for now (in production, extract from token context)
             const userRes = await pool.query("SELECT id FROM users LIMIT 1");
             const userId = userRes.rows[0]?.id;
 
@@ -278,100 +278,67 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', server: 'memorybank-mcp', version: '1.0.0' });
 });
 
-// Root endpoint - provide server info and available endpoints
-app.get('/', (req, res) => {
-    res.json({
-        name: "memorybank",
-        version: "1.0.0",
-        title: "MemoryBank MCP Server",
-        description: "A personal memory and notes management server.",
-        endpoints: {
-            sse: "/mcp",
-            messages: "/mcp/messages",
-            health: "/health",
-            oauth_metadata: "/.well-known/oauth-protected-resource"
-        }
-    });
-});
+// Session management for Streamable HTTP
+const transports = new Map();
 
-// Session management for SSE
-const sessions = new Map();
+// Create and configure transport for MCP Streamable HTTP
+async function handleMcpRequest(req, res) {
+    // Check for existing session
+    const sessionId = req.headers['mcp-session-id'];
 
-// SSE Endpoint - Main MCP connection (at /mcp)
-app.get('/mcp', authMiddleware, async (req, res) => {
-    const transport = new SSEServerTransport("/mcp/messages", res);
-    const sessionId = transport.sessionId || Date.now().toString();
-
-    sessions.set(sessionId, transport);
-    console.log(`📡 Session ${sessionId} connected (user: ${req.user?.sub || 'unknown'})`);
-
-    // Clean up on close
-    res.on('close', () => {
-        console.log(`📴 Session ${sessionId} closed`);
-        sessions.delete(sessionId);
-    });
-
-    await server.connect(transport);
-});
-
-// Alias: /sse for clients expecting SSE at /sse
-app.get('/sse', authMiddleware, async (req, res) => {
-    const transport = new SSEServerTransport("/messages", res);
-    const sessionId = transport.sessionId || Date.now().toString();
-
-    sessions.set(sessionId, transport);
-    console.log(`📡 Session ${sessionId} connected via /sse (user: ${req.user?.sub || 'unknown'})`);
-
-    res.on('close', () => {
-        console.log(`📴 Session ${sessionId} closed`);
-        sessions.delete(sessionId);
-    });
-
-    await server.connect(transport);
-});
-
-// Handle incoming messages for SSE transport
-app.post('/mcp/messages', authMiddleware, async (req, res) => {
-    const sessionId = req.query.sessionId;
     let transport;
 
-    if (sessionId && sessions.has(sessionId)) {
-        transport = sessions.get(sessionId);
-    } else {
-        // Fallback to the last created session for single-client demo
-        const keys = Array.from(sessions.keys());
-        if (keys.length > 0) {
-            transport = sessions.get(keys[keys.length - 1]);
-        }
+    if (sessionId && transports.has(sessionId)) {
+        // Reuse existing transport
+        transport = transports.get(sessionId);
+    } else if (!sessionId && req.method === 'POST') {
+        // New session - create transport
+        transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+        });
+
+        // Connect the server to this transport
+        await server.connect(transport);
+
+        // Store for session reuse
+        transport.onclose = () => {
+            if (transport.sessionId) {
+                console.log(`📴 Session ${transport.sessionId} closed`);
+                transports.delete(transport.sessionId);
+            }
+        };
+
+        // After first request, we'll have a session ID
+        // We'll store it after handling the request
+    } else if (sessionId && !transports.has(sessionId)) {
+        // Invalid session
+        return res.status(404).json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Session not found' },
+            id: null
+        });
     }
 
-    if (!transport) {
-        return res.status(404).json({ error: "Session not found. Please reconnect." });
+    // Handle the request
+    await transport.handleRequest(req, res, req.body);
+
+    // Store transport with session ID after first request
+    if (transport.sessionId && !transports.has(transport.sessionId)) {
+        transports.set(transport.sessionId, transport);
+        console.log(`📡 New session ${transport.sessionId} created (user: ${req.user?.sub || 'unknown'})`);
     }
+}
 
-    await transport.handlePostMessage(req, res);
-});
+// Main MCP endpoints - POST for JSON-RPC, GET for SSE streams
+app.post('/', authMiddleware, handleMcpRequest);
+app.post('/mcp', authMiddleware, handleMcpRequest);
+app.get('/', authMiddleware, handleMcpRequest);
+app.get('/mcp', authMiddleware, handleMcpRequest);
+app.delete('/mcp', authMiddleware, handleMcpRequest);
 
-// Alias: /messages for clients using /sse
-app.post('/messages', authMiddleware, async (req, res) => {
-    const sessionId = req.query.sessionId;
-    let transport;
-
-    if (sessionId && sessions.has(sessionId)) {
-        transport = sessions.get(sessionId);
-    } else {
-        const keys = Array.from(sessions.keys());
-        if (keys.length > 0) {
-            transport = sessions.get(keys[keys.length - 1]);
-        }
-    }
-
-    if (!transport) {
-        return res.status(404).json({ error: "Session not found. Please reconnect." });
-    }
-
-    await transport.handlePostMessage(req, res);
-});
+// Also handle the initialization message at root
+app.options('/', cors());
+app.options('/mcp', cors());
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
@@ -381,6 +348,7 @@ app.listen(PORT, () => {
 📡 Server: http://localhost:${PORT}
 🔐 Auth: ${AUTH_SERVER_URL}
 🔑 JWKS: ${JWKS_URL}
+🌐 Transport: Streamable HTTP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 Tools available:
    • save_memory - Save a new memory
