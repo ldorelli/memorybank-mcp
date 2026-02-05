@@ -412,6 +412,27 @@ oidc.on('server_error', (ctx, err) => {
     console.error('SERVER ERROR:', err);
 });
 
+// Track when authorization code is issued
+oidc.on('authorization_code.saved', (authorizationCode) => {
+    console.log('DEBUG: AuthorizationCode SAVED:', authorizationCode.jti);
+});
+
+oidc.on('authorization_code.consumed', (authorizationCode) => {
+    console.log('DEBUG: AuthorizationCode CONSUMED:', authorizationCode.jti);
+});
+
+oidc.on('authorization.success', (ctx) => {
+    console.log('DEBUG: Authorization SUCCESS - redirecting to:', ctx.oidc.params.redirect_uri);
+});
+
+oidc.on('authorization.error', (ctx, err) => {
+    console.error('DEBUG: Authorization ERROR:', err);
+});
+
+oidc.on('interaction.ended', (ctx) => {
+    console.log('DEBUG: Interaction ENDED');
+});
+
 app.use(oidc.callback());
 
 // HTTPS Start
