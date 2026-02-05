@@ -53,11 +53,17 @@ async function authMiddleware(req, res, next) {
     }
 
     try {
+        // Debug: Log token format
+        console.log('DEBUG: Token received (first 50 chars):', req.token?.substring(0, 50) + '...');
+        console.log('DEBUG: Token has 3 parts (JWT):', req.token?.split('.').length === 3);
+
         const { payload } = await jwtVerify(req.token, JWKS);
         req.user = payload;
+        console.log('DEBUG: JWT verified for user:', payload.sub);
         next();
     } catch (err) {
         console.error("JWT Verification failed:", err.message);
+        console.error("DEBUG: Full token:", req.token);
         return res.status(401).json({ error: 'Invalid Token' });
     }
 }
