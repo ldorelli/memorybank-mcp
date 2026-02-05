@@ -107,17 +107,44 @@ const findAccount = async (ctx, id) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// Note: Removed custom consent policy that was causing 'no scope was granted' errors.
-// MCP clients typically don't request OIDC scopes, so forcing consent would create a Grant
-// for scopes that weren't requested, which oidc-provider rejects.
-// Using default policy instead - consent will be requested when scopes ARE provided.
+// Default scopes to grant when client doesn't request any
+// This emulates real OAuth2 servers (like Uber, Spotify, etc.) that grant default scopes
+const DEFAULT_SCOPES = 'openid';
 
 const configuration = {
-    // Using default interaction policy (no custom consent check)
+    // Using default interaction policy
     interactions: {
         url(ctx, interaction) {
             return `/interaction/${interaction.uid}`;
         },
+    },
+    // Auto-grant default scopes when client doesn't request any
+    // This is key for MCP clients that don't send scope parameter
+    async loadExistingGrant(ctx) {
+        const grantId = ctx.oidc.session?.grantIdFor(ctx.oidc.client.clientId);
+
+        if (grantId) {
+            // Return existing grant
+            const grant = await ctx.oidc.provider.Grant.find(grantId);
+            if (grant) {
+                console.log('DEBUG: loadExistingGrant - found existing grant:', grantId);
+                return grant;
+            }
+        }
+
+        // No existing grant - create one with default scopes
+        // This is the key fix: auto-grant when no scopes are requested
+        const grant = new ctx.oidc.provider.Grant({
+            accountId: ctx.oidc.session.accountId,
+            clientId: ctx.oidc.client.clientId,
+        });
+
+        // Grant default scopes (openid at minimum)
+        grant.addOIDCScope(DEFAULT_SCOPES);
+        console.log('DEBUG: loadExistingGrant - created new grant with default scopes:', DEFAULT_SCOPES);
+
+        await grant.save();
+        return grant;
     },
     clients: [{
         client_id: 'mcp_client',
