@@ -3,7 +3,7 @@
 > **A secure, personal memory vault for your AI assistants.**
 
 <div align="center">
-  <img src="./logo.png" alt="MemoryBank Logo" width="200" style="image-rendering: pixelated;">
+  <img src="./logo.svg" alt="MemoryBank Logo" width="200" style="image-rendering: pixelated;">
   <p><em>Secure. Private. Retro-Chic.</em></p>
 </div>
 
