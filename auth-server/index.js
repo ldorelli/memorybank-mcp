@@ -118,18 +118,33 @@ customPolicy.get('consent').checks.add(new Check(
     'interaction_required',
     (ctx) => {
         const { oidc } = ctx;
-        // If already in consent prompt, don't re-trigger
+
+        console.log('DEBUG: Consent check - oidc.result:', JSON.stringify(oidc.result));
+        console.log('DEBUG: Consent check - oidc.grant:', oidc.grant?.jti);
+
+        // If we already have a result with consent.grantId, we just finished consenting
         if (oidc.result?.consent?.grantId) {
-            return false; // Consent was just given, don't loop
+            console.log('DEBUG: Skipping consent - result.consent.grantId exists');
+            return false;
         }
-        // If we have an existing grant, skip consent
-        if (oidc.session?.grantIdFor) {
+
+        // If the interaction already has a grantId, consent was given
+        if (ctx.oidc?.entities?.Interaction?.grantId) {
+            console.log('DEBUG: Skipping consent - interaction.grantId exists');
+            return false;
+        }
+
+        // If we have an existing grant in session, skip consent
+        if (oidc.session?.grantIdFor && oidc.client) {
             const existingGrant = oidc.session.grantIdFor(oidc.client.clientId);
             if (existingGrant) {
-                return false; // Already consented before
+                console.log('DEBUG: Skipping consent - session.grantIdFor found:', existingGrant);
+                return false;
             }
         }
+
         // No prior grant = require consent
+        console.log('DEBUG: Requiring consent - no grant found');
         return true;
     }
 ));
