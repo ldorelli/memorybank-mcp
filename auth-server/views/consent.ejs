@@ -54,17 +54,17 @@
             <div class="bg-slate-800/50 rounded-lg p-4 mb-8">
                 <h3 class="text-sm font-semibold text-slate-300 mb-2">This app is requesting permission to:</h3>
                 <ul class="list-disc list-inside text-sm text-slate-400 space-y-1">
-                    <% // Show friendly scope names const scopeFriendlyNames={ 'openid' : 'View your basic profile'
-                        , 'email' : 'View your email address' , 'offline_access' : 'Maintain access when you\' re
-                        away', 'memories:read' : '📖 Read your memories' , 'memories:write'
-                        : '✏️ Create and edit memories' }; // Get scopes from params const requestedScopes=(params.scope
-                        || '' ).split(' ').filter(s => s);
-                    requestedScopes.forEach(scope => { 
+                    <% var scopeFriendlyNames={ 'openid' : 'View your basic profile' , 'email'
+                        : 'View your email address' , 'offline_access' : 'Maintain access when you are away'
+                        , 'memories:read' : '📖 Read your memories' , 'memories:write' : '✏️ Create and edit memories'
+                        }; var requestedScopes=(params.scope || '' ).split(' ').filter(function(s) { return s; });
+                    for (var i = 0; i < requestedScopes.length; i++) {
+                        var scope = requestedScopes[i];
                     %>
                         <li class="py-1">
                             <%= scopeFriendlyNames[scope] || scope %>
                         </li>
-                    <% }); %>
+                    <% } %>
                 </ul>
             </div>
 
