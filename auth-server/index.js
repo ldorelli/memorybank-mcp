@@ -220,6 +220,7 @@ oidc.use(async (ctx, next) => {
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.static(path.join(__dirname, 'public'))); // Serve static files (css, logo)
 
 // Interaction routes
 app.get('/interaction/:uid', async (req, res, next) => {
@@ -244,7 +245,7 @@ app.get('/interaction/:uid', async (req, res, next) => {
         if (prompt.name === 'consent') {
             return res.render('consent', {
                 uid,
-                client: details.params, // client_id is inside params usually, or we can look it up
+                client: details.params,
                 details: prompt.details,
                 params,
                 title: 'Authorize'
@@ -258,7 +259,61 @@ app.get('/interaction/:uid', async (req, res, next) => {
     }
 });
 
-// GET /signup
+// Standalone Signup (GET)
+app.get('/signup', (req, res) => {
+    res.render('signup', {
+        uid: null, // Standalone mode
+        client: null,
+        flash: undefined
+    });
+});
+
+// Standalone Signup (POST)
+app.post('/signup', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Check availability
+        const check = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (check.rows.length > 0) {
+            return res.render('signup', {
+                uid: null,
+                client: null,
+                flash: 'Email already registered. Please sign in.'
+            });
+        }
+
+        // Hash & Create
+        const hash = await hashPassword(password);
+        await pool.query(
+            'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
+            [email, hash]
+        );
+
+        // Redirect to Interaction Login if we have a uid param (hybrid flow? no, standalone meant redirection to separate login)
+        // For standalone, we redirect to success or login page
+        // But since this is a separate app entrance, let's show a success page or redirect to oidc flow start?
+        // Let's redirect to a simple success page or the main login if they came from there.
+
+        // Actually, users might expect to be logged in. But for OIDC, we need an interaction session.
+        // For standalone, just say "Account created" and link to Login.
+
+        res.render('login_success', {
+            message: 'Account created successfully! You can now log in.'
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.render('signup', {
+            uid: null,
+            client: null,
+            flash: 'Error creating account.'
+        });
+    }
+});
+
+
+// OIDC Interaction Signup (GET) - Keep existing logic but use same template
 app.get('/interaction/:uid/signup', async (req, res, next) => {
     try {
         const { uid } = req.params;

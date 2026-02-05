@@ -1,85 +1,49 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorize Access</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
-
-        body {
-            font-family: 'Outfit', sans-serif;
-            background: #0f172a;
-            /* Slate 900 */
-        }
-
-        .glass {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .gradient-text {
-            background: linear-gradient(to right, #38bdf8, #818cf8);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
-    </style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Authorize - MemoryBank</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
 </head>
 
-<body class="flex items-center justify-center min-h-screen text-slate-200">
-
-    <div class="glass p-8 rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden">
-        <!-- Decoration -->
-        <div
-            class="absolute -top-10 -left-10 w-40 h-40 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob">
+<body>
+    <div class="scanlines"></div>
+    <div class="container">
+        <img src="/logo.png" alt="MemoryBank" class="logo">
+        <h1>AUTHORIZE</h1>
+        <div class="subtitle">
+            <span style="color: var(--primary-color); font-weight: bold;">
+                <%= client.client_id || 'Client' %>
+            </span>
+            requests access
         </div>
-        <div
-            class="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000">
+
+        <div style="text-align: left; margin-bottom: 1rem;">
+            This application is requesting permission to:
         </div>
 
-        <div class="relative z-10">
-            <h1 class="text-3xl font-semibold text-center mb-6">Authorize <span class="gradient-text font-bold">
-                    <%= client.client_id || 'Client' %>
-                </span></h1>
+        <ul class="scopes">
+            <% var scopeFriendlyNames={ 'openid' : 'View your basic profile' , 'email' : 'View your email address'
+                , 'offline_access' : 'Maintain access when you are away' , 'memories:read' : '📖 Read your memories'
+                , 'memories:write' : '✏️ Create and edit memories' }; var requestedScopes=(params.scope || '' ).split(' ').filter(function(s) { return s; });
+            for (var i = 0; i < requestedScopes.length; i++) {
+                var scope = requestedScopes[i];
+            %>
+                <li>
+                    <%= scopeFriendlyNames[scope] || scope %>
+                </li>
+            <% } %>
+        </ul>
 
-            <p class="text-center text-slate-400 mb-6 text-sm">
-                This application is requesting access to your account.
-            </p>
-
-            <div class="bg-slate-800/50 rounded-lg p-4 mb-8">
-                <h3 class="text-sm font-semibold text-slate-300 mb-2">This app is requesting permission to:</h3>
-                <ul class="list-disc list-inside text-sm text-slate-400 space-y-1">
-                    <% var scopeFriendlyNames={ 'openid' : 'View your basic profile' , 'email'
-                        : 'View your email address' , 'offline_access' : 'Maintain access when you are away'
-                        , 'memories:read' : '📖 Read your memories' , 'memories:write' : '✏️ Create and edit memories'
-                        }; var requestedScopes=(params.scope || '' ).split(' ').filter(function(s) { return s; });
-                    for (var i = 0; i < requestedScopes.length; i++) {
-                        var scope = requestedScopes[i];
-                    %>
-                        <li class="py-1">
-                            <%= scopeFriendlyNames[scope] || scope %>
-                        </li>
-                    <% } %>
-                </ul>
-            </div>
-
-            <form action="/interaction/<%= uid %>/confirm" method="POST" class="space-y-4">
-                <button type="submit"
-                    class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5">
-                    Allow Access
-                </button>
-                <a href="/interaction/<%= uid %>/abort"
-                    class="block w-full text-center py-3.5 text-slate-400 hover:text-white transition-colors">
-                    Cancel
-                </a>
-            </form>
-        </div>
+        <form action="/interaction/<%= uid %>/confirm" method="POST">
+            <button type="submit">GRANT ACCESS</button>
+            <a href="/interaction/<%= uid %>/abort">
+                <button type="button" class="secondary-btn">DENY</button>
+            </a>
+        </form>
     </div>
 </body>
-
 </html>
