@@ -1,210 +1,235 @@
 :root {
-  --bg-color: #FDF6E3;
-  --text-color: #2D3748;
-  --primary-color: #88B3C8; /* Muted pastel blue */
-  --secondary-color: #E2B0C4; /* Soft pastel pink */
-  --accent-color: #A9D1C1; /* Minty green */
-  --highlight-color: #F8D98C; /* Pastel yellow */
-  --error-color: #FFB3B3; /* Pastel red */
-  
-  --shadow-color: rgba(0, 0, 0, 0.1);
-  --pixel-border: 4px solid #2D3748;
-  --pixel-shadow: 4px 4px 0px #2D3748;
-  
-  --font-display: 'VT323', monospace;
-  --font-body: 'Inter', sans-serif;
+    --bg-color: #FDF6E3;
+    --text-color: #2D3748;
+    --primary-color: #88B3C8;
+    /* Muted pastel blue */
+    --secondary-color: #E2B0C4;
+    /* Soft pastel pink */
+    --accent-color: #A9D1C1;
+    /* Minty green */
+    --highlight-color: #F8D98C;
+    /* Pastel yellow */
+    --error-color: #FFB3B3;
+    /* Pastel red */
+
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --pixel-border: 4px solid #2D3748;
+    --pixel-shadow: 4px 4px 0px #2D3748;
+
+    --font-display: 'VT323', monospace;
+    --font-body: 'Inter', sans-serif;
 }
 
 body {
-  font-family: var(--font-body);
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  margin: 0;
-  background-image: 
-    radial-gradient(circle at 10% 20%, rgba(226, 176, 196, 0.1) 0%, transparent 20%),
-    radial-gradient(circle at 90% 80%, rgba(136, 179, 200, 0.1) 0%, transparent 20%);
+    font-family: var(--font-body);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background-image:
+        radial-gradient(circle at 10% 20%, rgba(226, 176, 196, 0.1) 0%, transparent 20%),
+        radial-gradient(circle at 90% 80%, rgba(136, 179, 200, 0.1) 0%, transparent 20%);
 }
 
 .container {
-  background: white;
-  border: var(--pixel-border);
-  box-shadow: var(--pixel-shadow);
-  padding: 2rem;
-  max-width: 400px;
-  width: 90%;
-  text-align: center;
-  position: relative;
+    background: white;
+    border: var(--pixel-border);
+    box-shadow: var(--pixel-shadow);
+    padding: 2rem;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    position: relative;
+}
+
+.content-container {
+    max-width: 800px;
+    text-align: left;
+}
+
+.content-container h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.content-container h2 {
+    font-family: var(--font-display);
+    color: var(--text-color);
+    margin-top: 2rem;
+    font-size: 1.5rem;
+}
+
+.content-container p {
+    line-height: 1.6;
+    margin-bottom: 1rem;
 }
 
 .container::after {
-  content: "";
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
-  border: 2px solid #E2E8F0;
-  pointer-events: none;
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 2px solid #E2E8F0;
+    pointer-events: none;
 }
 
 .logo {
-  image-rendering: pixelated;
-  width: 120px;
-  height: auto;
-  margin-bottom: 1rem;
+    image-rendering: pixelated;
+    width: 120px;
+    height: auto;
+    margin-bottom: 1rem;
 }
 
 h1 {
-  font-family: var(--font-display);
-  font-size: 3rem;
-  margin: 0;
-  color: var(--text-color);
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  text-shadow: 2px 2px 0px var(--secondary-color);
+    font-family: var(--font-display);
+    font-size: 3rem;
+    margin: 0;
+    color: var(--text-color);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 2px 2px 0px var(--secondary-color);
 }
 
 .subtitle {
-  color: #718096;
-  font-size: 0.9rem;
-  margin-bottom: 2rem;
+    color: #718096;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
 }
 
 .input-group {
-  margin-bottom: 1.5rem;
-  text-align: left;
+    margin-bottom: 1.5rem;
+    text-align: left;
 }
 
 label {
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-color);
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-color);
 }
 
 input[type="text"],
 input[type="email"],
 input[type="password"] {
-  width: 100%;
-  padding: 0.8rem;
-  border: 4px solid #CBD5E0;
-  box-sizing: border-box;
-  font-family: var(--font-body);
-  font-size: 1rem;
-  transition: all 0.2s;
-  outline: none;
+    width: 100%;
+    padding: 0.8rem;
+    border: 4px solid #CBD5E0;
+    box-sizing: border-box;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    transition: all 0.2s;
+    outline: none;
 }
 
 input:focus {
-  border-color: var(--primary-color);
-  box-shadow: 2px 2px 0px var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: 2px 2px 0px var(--primary-color);
 }
 
 button {
-  background-color: var(--primary-color);
-  color: white;
-  border: 4px solid #2D3748;
-  padding: 1rem 2rem;
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  cursor: pointer;
-  width: 100%;
-  box-shadow: 4px 4px 0px #2D3748;
-  transition: transform 0.1s, box-shadow 0.1s;
-  text-transform: uppercase;
-  position: relative;
-  overflow: hidden;
+    background-color: var(--primary-color);
+    color: white;
+    border: 4px solid #2D3748;
+    padding: 1rem 2rem;
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    cursor: pointer;
+    width: 100%;
+    box-shadow: 4px 4px 0px #2D3748;
+    transition: transform 0.1s, box-shadow 0.1s;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
 }
 
 button:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 5px 5px 0px #2D3748;
-  background-color: #9AC0D1; 
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0px #2D3748;
+    background-color: #9AC0D1;
 }
 
 button:active {
-  transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0px #2D3748;
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0px #2D3748;
 }
 
 button.secondary-btn {
-  background-color: var(--secondary-color);
-  margin-top: 1rem;
-  font-size: 1.2rem;
-  padding: 0.8rem;
+    background-color: var(--secondary-color);
+    margin-top: 1rem;
+    font-size: 1.2rem;
+    padding: 0.8rem;
 }
 
 button.secondary-btn:hover {
-  background-color: #E8C1D1;
+    background-color: #E8C1D1;
 }
 
 /* Consent Screen Specifics */
 ul.scopes {
-  list-style-type: none;
-  padding: 0;
-  text-align: left;
-  border: 2px dashed #CBD5E0;
-  padding: 1rem;
-  margin: 1.5rem 0;
-  background-color: #FAFAFA;
+    list-style-type: none;
+    padding: 0;
+    text-align: left;
+    border: 2px dashed #CBD5E0;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    background-color: #FAFAFA;
 }
 
 ul.scopes li {
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #EEE;
-  font-family: var(--font-body);
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #EEE;
+    font-family: var(--font-body);
 }
 
 ul.scopes li:last-child {
-  border-bottom: none;
+    border-bottom: none;
 }
 
 .flash-error {
-  background-color: var(--error-color);
-  color: #742A2A;
-  padding: 1rem;
-  border: 2px solid #742A2A;
-  margin-bottom: 1.5rem;
-  font-family: var(--font-body);
-  font-size: 0.9rem;
+    background-color: var(--error-color);
+    color: #742A2A;
+    padding: 1rem;
+    border: 2px solid #742A2A;
+    margin-bottom: 1.5rem;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
 }
 
 .links {
-  margin-top: 2rem;
-  font-size: 0.9rem;
+    margin-top: 2rem;
+    font-size: 0.9rem;
 }
 
 .links a {
-  color: var(--text-color);
-  text-decoration: none;
-  border-bottom: 2px solid var(--secondary-color);
+    color: var(--text-color);
+    text-decoration: none;
+    border-bottom: 2px solid var(--secondary-color);
 }
 
 .links a:hover {
-  background-color: var(--secondary-color);
-  color: white;
+    background-color: var(--secondary-color);
+    color: white;
 }
 
 /* Retro CRT scanline effect overlay */
 .scanlines {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: linear-gradient(
-    to bottom,
-    rgba(255,255,255,0),
-    rgba(255,255,255,0) 50%,
-    rgba(0,0,0,0.02) 50%,
-    rgba(0,0,0,0.02)
-  );
-  background-size: 100% 4px;
-  pointer-events: none;
-  z-index: 999;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(to bottom,
+            rgba(255, 255, 255, 0),
+            rgba(255, 255, 255, 0) 50%,
+            rgba(0, 0, 0, 0.02) 50%,
+            rgba(0, 0, 0, 0.02));
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 999;
 }

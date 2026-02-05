@@ -259,6 +259,23 @@ app.get('/interaction/:uid', async (req, res, next) => {
     }
 });
 
+// Static Pages (GPT Store Compliance)
+app.get('/', (req, res) => {
+    res.render('index', { title: 'Home' });
+});
+
+app.get('/support', (req, res) => {
+    res.render('support', { title: 'Support' });
+});
+
+app.get('/tos', (req, res) => {
+    res.render('tos', { title: 'Terms of Service' });
+});
+
+app.get('/privacy', (req, res) => {
+    res.render('privacy', { title: 'Privacy Policy' });
+});
+
 // Standalone Signup (GET)
 app.get('/signup', (req, res) => {
     res.render('signup', {
