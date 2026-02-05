@@ -1,4 +1,4 @@
-import Provider from 'oidc-provider';
+import Provider, { interactionPolicy } from 'oidc-provider';
 import express from 'express';
 import bodyParser from 'body-parser';
 import pgAdapter from './adapter.js'; // Note .js extension
@@ -107,9 +107,8 @@ const findAccount = async (ctx, id) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
-const { interactionPolicy: { Prompt, base: policy, Check } } = Provider;
-
 // Force Consent Policy
+const { Prompt, base: policy, Check } = interactionPolicy;
 const interactionPolicy = policy();
 const consentPrompt = interactionPolicy.get('consent');
 consentPrompt.checks.add(new Check('force_consent', 'Consent required', 'interaction_required', (ctx) => {
