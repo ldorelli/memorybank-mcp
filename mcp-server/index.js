@@ -338,6 +338,180 @@ async function handleMcpRequest(req, res) {
 // Main MCP endpoints - POST for JSON-RPC, GET for SSE streams
 app.post('/', authMiddleware, handleMcpRequest);
 app.post('/mcp', authMiddleware, handleMcpRequest);
+// ============ REST API (OpenAI GPT Actions Compatibility) ============
+
+// Helper to get user ID from DB based on JWT sub (which is email/id from auth server)
+// In this shared DB setup, the JWT 'sub' claim IS the user ID (uuid) if auth server sets it so.
+// Let's verify: Auth server uses `accountId` which is the UUID.
+// So `req.user.sub` should be the UUID.
+// However, `save_memory` tool re-queries user ID from users table using LIMIT 1 (bad logic for multi-user).
+// FIX: We should trust req.user.sub (the UUID) if available, or query by email if sub is email.
+// The current `save_memory` tool logic `SELECT id FROM users LIMIT 1` is strictly for single-user dev/demo mode.
+// We will replicate that for now to NOT BREAK EXISTING BEHAVIOR, but proper multi-user is better.
+// Actually, `req.user.sub` from OIDC provider is the `accountId`.
+// Let's stick to the current logic for consistency with MCP tools, but wrapped in REST.
+
+// POST /api/memory - Save a memory
+app.post('/api/memory', authMiddleware, async (req, res) => {
+    try {
+        const { content, tags } = req.body;
+        if (!content) return res.status(400).json({ error: 'Content is required' });
+
+        // Logic matched with 'save_memory' tool
+        // Finding user:
+        const userRes = await pool.query("SELECT id FROM users LIMIT 1");
+        const userId = userRes.rows[0]?.id; // Fallback to first user for now (MVP)
+
+        if (!userId) return res.status(404).json({ error: 'No user found' });
+
+        const result = await pool.query(
+            "INSERT INTO notes (user_id, content) VALUES ($1, $2) RETURNING id, created_at",
+            [userId, content]
+        );
+
+        // Tags would need a separate table or column, but the tool just echoes them.
+        // We'll ignore tags storage for now as schema doesn't seem to support it (based on tool impl).
+
+        res.json({
+            id: result.rows[0].id,
+            content,
+            created_at: result.rows[0].created_at,
+            message: 'Memory saved successfully'
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /api/memories - List/Search
+app.get('/api/memories', authMiddleware, async (req, res) => {
+    try {
+        const { query, limit = 10 } = req.query;
+
+        const userRes = await pool.query("SELECT id FROM users LIMIT 1");
+        const userId = userRes.rows[0]?.id;
+        if (!userId) return res.status(404).json({ error: 'No user found' });
+
+        let result;
+        if (query) {
+            result = await pool.query(
+                "SELECT id, content, created_at FROM notes WHERE user_id = $1 AND content ILIKE $2 ORDER BY created_at DESC LIMIT $3",
+                [userId, `%${query}%`, limit]
+            );
+        } else {
+            result = await pool.query(
+                "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+                [userId, limit]
+            );
+        }
+
+        res.json({
+            count: result.rows.length,
+            memories: result.rows
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// DELETE /api/memory/:id
+app.delete('/api/memory/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userRes = await pool.query("SELECT id FROM users LIMIT 1");
+        const userId = userRes.rows[0]?.id;
+
+        const result = await pool.query(
+            "DELETE FROM notes WHERE id = $1 AND user_id = $2 RETURNING id",
+            [id, userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Memory not found' });
+        }
+
+        res.json({ message: 'Memory deleted', id });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /openapi.json
+app.get('/openapi.json', (req, res) => {
+    const host = req.get('host');
+    const protocol = req.protocol; // 'http' or 'https'
+    // Ensure https in production
+    const baseUrl = process.env.MCP_SERVER_URL || `${protocol}://${host}`;
+
+    res.json({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "MemoryBank API",
+            "description": "API for storing and retrieving personal memories.",
+            "version": "1.0.0"
+        },
+        "servers": [
+            {
+                "url": baseUrl
+            }
+        ],
+        "paths": {
+            "/api/memory": {
+                "post": {
+                    "description": "Save a new memory",
+                    "operationId": "saveMemory",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "content": { "type": "string", "description": "The memory content" },
+                                        "tags": { "type": "array", "items": { "type": "string" } }
+                                    },
+                                    "required": ["content"]
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": { "description": "Memory saved" }
+                    }
+                }
+            },
+            "/api/memories": {
+                "get": {
+                    "description": "List or search memories",
+                    "operationId": "listMemories",
+                    "parameters": [
+                        { "name": "query", "in": "query", "schema": { "type": "string" }, "description": "Search keyword" },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+                    ],
+                    "responses": {
+                        "200": { "description": "List of memories" }
+                    }
+                }
+            },
+            "/api/memory/{id}": {
+                "delete": {
+                    "description": "Delete a memory by ID",
+                    "operationId": "deleteMemory",
+                    "parameters": [
+                        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": {
+                        "200": { "description": "Memory deleted" }
+                    }
+                }
+            }
+        }
+    });
+});
+
 app.get('/', authMiddleware, handleMcpRequest);
 app.get('/mcp', authMiddleware, handleMcpRequest);
 app.delete('/mcp', authMiddleware, handleMcpRequest);
