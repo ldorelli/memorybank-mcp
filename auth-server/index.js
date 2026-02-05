@@ -107,7 +107,40 @@ const findAccount = async (ctx, id) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
+// Custom Interaction Policy: Force consent ONCE per client (if no grant exists)
+const { Prompt, base: policy, Check } = interactionPolicy;
+const customPolicy = policy();
+
+// Add a check that triggers consent if no grant exists for this client
+customPolicy.get('consent').checks.add(new Check(
+    'native_client_prompt',
+    'consent required for new client authorization',
+    'interaction_required',
+    (ctx) => {
+        const { oidc } = ctx;
+        // If already in consent prompt, don't re-trigger
+        if (oidc.result?.consent?.grantId) {
+            return false; // Consent was just given, don't loop
+        }
+        // If we have an existing grant, skip consent
+        if (oidc.session?.grantIdFor) {
+            const existingGrant = oidc.session.grantIdFor(oidc.client.clientId);
+            if (existingGrant) {
+                return false; // Already consented before
+            }
+        }
+        // No prior grant = require consent
+        return true;
+    }
+));
+
 const configuration = {
+    interactions: {
+        policy: customPolicy,
+        url(ctx, interaction) {
+            return `/interaction/${interaction.uid}`;
+        },
+    },
     clients: [{
         client_id: 'mcp_client',
         client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
