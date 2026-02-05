@@ -367,7 +367,9 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
         const { uid } = req.params;
         const details = await oidc.interactionDetails(req, res);
 
-        const { email, password } = req.body;
+        // Form sends 'login' for email, but we also support 'email' just in case
+        const email = req.body.login || req.body.email;
+        const { password } = req.body;
 
         // Verify User
         const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
