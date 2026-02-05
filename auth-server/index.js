@@ -1,4 +1,4 @@
-import Provider, { interactionPolicy } from 'oidc-provider';
+import Provider from 'oidc-provider';
 import express from 'express';
 import bodyParser from 'body-parser';
 import pgAdapter from './adapter.js'; // Note .js extension
@@ -107,51 +107,14 @@ const findAccount = async (ctx, id) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// Custom Interaction Policy: Force consent ONCE per client (if no grant exists)
-const { Prompt, base: policy, Check } = interactionPolicy;
-const customPolicy = policy();
-
-// Add a check that triggers consent if no grant exists for this client
-customPolicy.get('consent').checks.add(new Check(
-    'native_client_prompt',
-    'consent required for new client authorization',
-    'interaction_required',
-    (ctx) => {
-        const { oidc } = ctx;
-
-        console.log('DEBUG: Consent check - oidc.result:', JSON.stringify(oidc.result));
-        console.log('DEBUG: Consent check - oidc.grant:', oidc.grant?.jti);
-
-        // If we already have a result with consent.grantId, we just finished consenting
-        if (oidc.result?.consent?.grantId) {
-            console.log('DEBUG: Skipping consent - result.consent.grantId exists');
-            return false;
-        }
-
-        // If the interaction already has a grantId, consent was given
-        if (ctx.oidc?.entities?.Interaction?.grantId) {
-            console.log('DEBUG: Skipping consent - interaction.grantId exists');
-            return false;
-        }
-
-        // If we have an existing grant in session, skip consent
-        if (oidc.session?.grantIdFor && oidc.client) {
-            const existingGrant = oidc.session.grantIdFor(oidc.client.clientId);
-            if (existingGrant) {
-                console.log('DEBUG: Skipping consent - session.grantIdFor found:', existingGrant);
-                return false;
-            }
-        }
-
-        // No prior grant = require consent
-        console.log('DEBUG: Requiring consent - no grant found');
-        return true;
-    }
-));
+// Note: Removed custom consent policy that was causing 'no scope was granted' errors.
+// MCP clients typically don't request OIDC scopes, so forcing consent would create a Grant
+// for scopes that weren't requested, which oidc-provider rejects.
+// Using default policy instead - consent will be requested when scopes ARE provided.
 
 const configuration = {
+    // Using default interaction policy (no custom consent check)
     interactions: {
-        policy: customPolicy,
         url(ctx, interaction) {
             return `/interaction/${interaction.uid}`;
         },
@@ -375,29 +338,17 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
             });
         }
 
-        // Add scopes (with null checks)
-        // IMPORTANT: Always add at least 'openid' scope, otherwise oidc-provider will reject with 'no scope was granted'
-        let hasScopes = false;
-
+        // Add scopes if they were requested (only add what was actually requested)
         if (details?.missingOIDCScope?.length) {
             grant.addOIDCScope(details.missingOIDCScope.join(' '));
-            hasScopes = true;
         }
         if (details?.missingOIDCClaims?.length) {
             grant.addOIDCClaims(details.missingOIDCClaims);
-            hasScopes = true;
         }
         if (details?.missingResourceScopes) {
             for (const [indicator, scopes] of Object.entries(details.missingResourceScopes)) {
                 grant.addResourceScope(indicator, scopes.join(' '));
-                hasScopes = true;
             }
-        }
-
-        // If no scopes were explicitly requested, add 'openid' as a default
-        if (!hasScopes) {
-            console.log('DEBUG: No scopes in details, adding default openid scope');
-            grant.addOIDCScope('openid');
         }
 
         grantId = await grant.save();
