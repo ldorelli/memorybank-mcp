@@ -376,16 +376,28 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
         }
 
         // Add scopes (with null checks)
+        // IMPORTANT: Always add at least 'openid' scope, otherwise oidc-provider will reject with 'no scope was granted'
+        let hasScopes = false;
+
         if (details?.missingOIDCScope?.length) {
             grant.addOIDCScope(details.missingOIDCScope.join(' '));
+            hasScopes = true;
         }
         if (details?.missingOIDCClaims?.length) {
             grant.addOIDCClaims(details.missingOIDCClaims);
+            hasScopes = true;
         }
         if (details?.missingResourceScopes) {
             for (const [indicator, scopes] of Object.entries(details.missingResourceScopes)) {
                 grant.addResourceScope(indicator, scopes.join(' '));
+                hasScopes = true;
             }
+        }
+
+        // If no scopes were explicitly requested, add 'openid' as a default
+        if (!hasScopes) {
+            console.log('DEBUG: No scopes in details, adding default openid scope');
+            grant.addOIDCScope('openid');
         }
 
         grantId = await grant.save();
