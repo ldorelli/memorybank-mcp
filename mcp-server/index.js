@@ -64,6 +64,17 @@ async function authMiddleware(req, res, next) {
     } catch (err) {
         console.error("JWT Verification failed:", err.message);
         console.error("DEBUG: Full token:", req.token);
+
+        // Guide the client to the correct Metadata endpoint via Link header (RFC 9728)
+        const baseUrl = process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
+        let metadataPath = '/.well-known/oauth-protected-resource';
+
+        if (req.path.startsWith('/dcr')) {
+            metadataPath = '/dcr/.well-known/oauth-protected-resource';
+        }
+
+        res.setHeader('Link', `<${baseUrl}${metadataPath}>; rel="describedby"`);
+
         return res.status(401).json({ error: 'Invalid Token' });
     }
 }
