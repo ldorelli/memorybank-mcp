@@ -57,6 +57,7 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
         token_endpoint: `${baseUrl}/token`,
         registration_endpoint: `${baseUrl}/reg`, // RFC 7591
         jwks_uri: `${baseUrl}/jwks`,
+        client_id_metadata_document_supported: true,
         token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
         response_types_supported: ['code'],
         response_modes_supported: ['query', 'fragment'],
