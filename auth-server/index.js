@@ -200,6 +200,10 @@ const configuration = {
 
         return undefined;
     },
+    // Advertise Client ID Metadata Support
+    discovery: {
+        client_id_metadata_document_supported: true,
+    },
     cookies: {
         keys: process.env.COOKIE_KEYS ? process.env.COOKIE_KEYS.split(',') : ['fallback_dev_key_dont_use_in_prod'],
         short: {
@@ -295,6 +299,10 @@ const legacyConfiguration = {
     },
     jwks: configuration.jwks, // Re-use keys
     adapter: pgAdapter,
+    // Explicitly disable Metadata support in Legacy Mode
+    discovery: {
+        client_id_metadata_document_supported: false,
+    },
     features: {
         ...configuration.features,
         resourceIndicators: {
