@@ -72,6 +72,17 @@ const AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'https://localhost:3000';
 
 // OAuth Protected Resource endpoint (RFC 9728) - Root
 app.get('/.well-known/oauth-protected-resource', (req, res) => {
+    const resourceParam = req.query.resource || '';
+    // If the client is asking about the DCR endpoint, point them to the DCR Auth Server
+    if (resourceParam.includes('/dcr')) {
+        console.log('DEBUG: Serving Legacy Auth Server for DCR resource:', resourceParam);
+        return res.json({
+            resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+            authorization_servers: [LEGACY_AUTH_SERVER_URL],
+            scopes_supported: ["openid", "memories:read", "memories:write"]
+        });
+    }
+
     res.json({
         resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
         authorization_servers: [AUTH_SERVER_URL],
