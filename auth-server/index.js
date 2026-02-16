@@ -68,6 +68,32 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
     });
 });
 
+// Legacy Metadata (RFC 8414) for /dcr path
+// Ensure clients checking this specific path get the "Legacy" config
+app.get('/dcr/.well-known/oauth-authorization-server', (req, res) => {
+    console.log('Serving RFC 8414 Metadata for /dcr');
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Content-Type', 'application/json');
+
+    const baseUrl = `${issuer.replace(/\/$/, '')}/dcr`;
+    res.json({
+        issuer: baseUrl,
+        authorization_endpoint: `${baseUrl}/auth`,
+        token_endpoint: `${baseUrl}/token`,
+        registration_endpoint: `${baseUrl}/reg`,
+        jwks_uri: `${baseUrl}/jwks`,
+        // EXPLICITLY FALSE
+        client_id_metadata_document_supported: false,
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        response_types_supported: ['code'],
+        response_modes_supported: ['query', 'fragment'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+        revocation_endpoint: `${baseUrl}/token/revocation`,
+        introspection_endpoint: `${baseUrl}/token/introspection`,
+    });
+});
+
 // Force HTTPS in production (Railway LB terminates SSL)
 // FIX: We need to fool both Express (trust proxy) and the Cookies library (req.connection.encrypted)
 if (process.env.NODE_ENV === 'production') {
