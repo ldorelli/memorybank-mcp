@@ -76,7 +76,11 @@ async function authMiddleware(req, res, next) {
         }
 
         res.setHeader('Link', `<${baseUrl}${metadataPath}>; rel="describedby"`);
-        res.setHeader('WWW-Authenticate', `Bearer realm="${realm}", scope="openid memories:read memories:write"`);
+
+        // Critical: Client looks for 'resource_metadata' in WWW-Authenticate to find the config
+        // This MUST point to the .well-known/oauth-protected-resource endpoint
+        const resourceMetadataUrl = `${baseUrl}${metadataPath}`;
+        res.setHeader('WWW-Authenticate', `Bearer realm="${realm}", scope="openid memories:read memories:write", resource_metadata="${resourceMetadataUrl}"`);
 
         return res.status(401).json({ error: 'Invalid Token' });
     }
