@@ -68,12 +68,15 @@ async function authMiddleware(req, res, next) {
         // Guide the client to the correct Metadata endpoint via Link header (RFC 9728)
         const baseUrl = process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
         let metadataPath = '/.well-known/oauth-protected-resource';
+        let realm = 'MemoryBank MCP';
 
         if (req.path.startsWith('/dcr')) {
             metadataPath = '/dcr/.well-known/oauth-protected-resource';
+            realm = 'MemoryBank Legacy DCR';
         }
 
         res.setHeader('Link', `<${baseUrl}${metadataPath}>; rel="describedby"`);
+        res.setHeader('WWW-Authenticate', `Bearer realm="${realm}", scope="openid memories:read memories:write"`);
 
         return res.status(401).json({ error: 'Invalid Token' });
     }
