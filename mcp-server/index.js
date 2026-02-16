@@ -40,13 +40,32 @@ try {
 
 // Middleware to verify JWT
 async function authMiddleware(req, res, next) {
+    // Helper to send 401 with correct discovery headers
+    const send401 = (message) => {
+        const baseUrl = process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
+        let metadataPath = '/.well-known/oauth-protected-resource';
+        let realm = 'MemoryBank MCP';
+
+        if (req.path.startsWith('/dcr')) {
+            metadataPath = '/dcr/.well-known/oauth-protected-resource';
+            realm = 'MemoryBank Legacy DCR';
+        }
+
+        const resourceMetadataUrl = `${baseUrl}${metadataPath}`;
+
+        res.setHeader('Link', `<${resourceMetadataUrl}>; rel="describedby"`);
+        res.setHeader('WWW-Authenticate', `Bearer realm="${realm}", scope="openid memories:read memories:write", resource_metadata="${resourceMetadataUrl}"`);
+
+        return res.status(401).json({ error: message });
+    };
+
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         // Check query strings for EventSource compatibility
         if (req.query.token) {
             req.token = req.query.token;
         } else {
-            return res.status(401).json({ error: 'Missing Authorization Header' });
+            return send401('Missing Authorization Header');
         }
     } else {
         req.token = authHeader.split(' ')[1];
@@ -65,24 +84,7 @@ async function authMiddleware(req, res, next) {
         console.error("JWT Verification failed:", err.message);
         console.error("DEBUG: Full token:", req.token);
 
-        // Guide the client to the correct Metadata endpoint via Link header (RFC 9728)
-        const baseUrl = process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
-        let metadataPath = '/.well-known/oauth-protected-resource';
-        let realm = 'MemoryBank MCP';
-
-        if (req.path.startsWith('/dcr')) {
-            metadataPath = '/dcr/.well-known/oauth-protected-resource';
-            realm = 'MemoryBank Legacy DCR';
-        }
-
-        res.setHeader('Link', `<${baseUrl}${metadataPath}>; rel="describedby"`);
-
-        // Critical: Client looks for 'resource_metadata' in WWW-Authenticate to find the config
-        // This MUST point to the .well-known/oauth-protected-resource endpoint
-        const resourceMetadataUrl = `${baseUrl}${metadataPath}`;
-        res.setHeader('WWW-Authenticate', `Bearer realm="${realm}", scope="openid memories:read memories:write", resource_metadata="${resourceMetadataUrl}"`);
-
-        return res.status(401).json({ error: 'Invalid Token' });
+        return send401('Invalid Token');
     }
 }
 
