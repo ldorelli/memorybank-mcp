@@ -382,9 +382,26 @@ async function handleMcpRequest(req, res) {
     }
 }
 
+// ============ LEGACY DCR ROUTES (Testing) ============
+// Alias MCP handlers for /dcr path
+app.post('/dcr', authMiddleware, handleMcpRequest);
+app.get('/dcr', authMiddleware, handleMcpRequest);
+
+// Explicitly handle /dcr/mcp
+app.post('/dcr/mcp', authMiddleware, handleMcpRequest);
+app.get('/dcr/mcp', authMiddleware, handleMcpRequest);
+app.delete('/dcr/mcp', authMiddleware, handleMcpRequest);
+
+
+// ============ STANDARD MCP ROUTES ============
 // Main MCP endpoints - POST for JSON-RPC, GET for SSE streams
 app.post('/', authMiddleware, handleMcpRequest);
+app.get('/', authMiddleware, handleMcpRequest);
+
 app.post('/mcp', authMiddleware, handleMcpRequest);
+app.get('/mcp', authMiddleware, handleMcpRequest);
+app.delete('/mcp', authMiddleware, handleMcpRequest);
+
 // ============ REST API (OpenAI GPT Actions Compatibility) ============
 
 // Helper to get user ID from DB based on JWT sub (which is email/id from auth server)
