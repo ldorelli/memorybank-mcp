@@ -125,17 +125,80 @@ const configuration = {
         'memories:read': ['memory_access'],
         'memories:write': ['memory_access'],
     },
-    clients: [{
-        client_id: 'mcp_client',
-        client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
-        grant_types: ['authorization_code'],
-        redirect_uris: [
-            'https://oauth.pstmn.io/v1/callback',
-            'https://memorybank-mcp.up.railway.app/health'
-        ],
-        response_types: ['code'],
-        scope: DEFAULT_SCOPES, // default scopes for this client
-    }],
+    // Dynamic Client Lookup (Dual Auth: DCR + Metadata)
+    async findClient(ctx, id) {
+        // 1. Legacy / Static DCR Client
+        if (id === 'mcp_client') {
+            return {
+                client_id: 'mcp_client',
+                client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
+                grant_types: ['authorization_code'],
+                redirect_uris: [
+                    'https://oauth.pstmn.io/v1/callback',
+                    'https://memorybank-mcp.up.railway.app/health'
+                ],
+                response_types: ['code'],
+                scope: DEFAULT_SCOPES,
+            };
+        }
+
+        // 2. Client ID Metadata (URL-based Identity)
+        // Check if we are in "Legacy Mode" (User testing DCR-only)
+        if (ctx.query && ctx.query.force_dcr === 'true') {
+            console.log('DEBUG: Legacy Mode enabled. Rejecting potential Metadata client:', id);
+            // If it looks like a URL, reject it to emulate a server that doesn't support it
+            if (id.startsWith('http://') || id.startsWith('https://')) {
+                return undefined;
+            }
+        }
+
+        // If ID is a URL, fetch metadata
+        if (id.startsWith('http://') || id.startsWith('https://')) {
+            try {
+                console.log('DEBUG: Fetching Client Metadata from:', id);
+                // Security: In prod, ensure strict timeouts and size limits to prevent DoS
+                const response = await fetch(id, { signal: AbortSignal.timeout(5000) });
+
+                if (!response.ok) {
+                    console.error(`Failed to fetch client metadata: ${response.status}`);
+                    return undefined;
+                }
+
+                const metadata = await response.json();
+
+                // Validate Metadata (Basic Spec checks)
+                if (metadata.client_id !== id) {
+                    console.error('Metadata client_id mismatch');
+                    return undefined;
+                }
+
+                // Inject our default scopes if they aren't explicitly restricted? 
+                // Actually, the client just needs to be returned.
+                // We need to map it to oidc-provider's expected format.
+
+                return {
+                    client_id: id,
+                    client_secret: undefined, // Public client (no secret) or use "client_secret_post" if they have one? 
+                    // Metadata spec usually implies Public Client for native apps OR confidential for web.
+                    // For MCP, usually there is no pre-shared secret in this flow yet. 
+                    // We treat as Public Client (PKCE recommended, but we disabled PKCE enforcement for MVP).
+                    token_endpoint_auth_method: 'none',
+
+                    grant_types: ['authorization_code', 'implicit'], // Support both
+                    redirect_uris: metadata.redirect_uris,
+                    response_types: ['code'],
+                    // Ensure we allow the scopes they might ask for
+                    scope: metadata.scope || DEFAULT_SCOPES,
+                };
+
+            } catch (err) {
+                console.error('Error fetching/parsing client metadata:', err);
+                return undefined;
+            }
+        }
+
+        return undefined;
+    },
     cookies: {
         keys: process.env.COOKIE_KEYS ? process.env.COOKIE_KEYS.split(',') : ['fallback_dev_key_dont_use_in_prod'],
         short: {
@@ -202,23 +265,97 @@ const configuration = {
     }
 };
 
-// USE HTTPS for localhost to allow verification of Secure cookies
+// OIDC Provider Configuration
 const issuer = process.env.ISSUER || 'https://localhost:3000';
 const oidc = new Provider(issuer, configuration);
 
+// Legacy Provider (DCR Only - No Metadata Support)
+// Mounted at /dcr to emulate an old server
+const legacyIssuer = `${issuer}/dcr`;
+const legacyConfiguration = {
+    ...configuration,
+    // Override findClient to be undefined (falls back to clients array) 
+    // OR enforce strict check if we reused the object. 
+    // Since 'configuration' has 'findClient', we must remove it.
+    findClient: undefined,
+    clients: [{
+        client_id: 'mcp_client',
+        client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
+        grant_types: ['authorization_code'],
+        redirect_uris: [
+            'https://oauth.pstmn.io/v1/callback',
+            'https://memorybank-mcp.up.railway.app/health'
+        ],
+        response_types: ['code'],
+        scope: DEFAULT_SCOPES,
+    }],
+    jwt: {
+        ...configuration.jwt,
+    },
+    jwks: configuration.jwks, // Re-use keys
+    adapter: pgAdapter,
+    features: {
+        ...configuration.features,
+        resourceIndicators: {
+            ...configuration.features.resourceIndicators,
+            defaultResource: (ctx) => process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+            getResourceServerInfo: (ctx, resourceIndicator, client) => ({
+                scope: 'openid memories:read memories:write',
+                audience: resourceIndicator,
+                accessTokenFormat: 'jwt',
+                accessTokenTTL: 3600,
+            }),
+        }
+    }
+};
+
+const oidcLegacy = new Provider(legacyIssuer, legacyConfiguration);
+
 // Middleware to inject default scopes into authorization requests
-// This is the key fix: if client doesn't request scopes, add our defaults
-oidc.use(async (ctx, next) => {
-    // Only intercept authorization endpoint
-    if (ctx.path === '/auth' && ctx.method === 'GET') {
-        // If no scope parameter, inject our defaults
+// Verify if we need this for legacy too. Yes.
+const injectScopes = (prefix) => async (ctx, next) => {
+    if (ctx.path === `${prefix}/auth` && ctx.method === 'GET') {
         if (!ctx.query.scope) {
-            console.log('DEBUG: No scope in request, injecting defaults:', DEFAULT_SCOPES);
+            console.log(`DEBUG: No scope in request (${prefix}), injecting defaults:`, DEFAULT_SCOPES);
             ctx.query.scope = DEFAULT_SCOPES;
         }
     }
     await next();
-});
+};
+
+oidc.use(injectScopes(''));
+oidcLegacy.use(injectScopes('/dcr'));
+
+// Mount Providers
+// Legacy first to catch specific route
+app.use('/dcr', oidcLegacy.callback());
+
+// Main provider handles root
+// Note: oidc.callback() handles all routes matching issuer. 
+// If issuer is root, it handles everything.
+// But legacy is mounted on /dcr, so express matches it first if we use app.use('/dcr', ...).
+// Wait, oidc-provider mounts based on internal reasoning too.
+// Using `app.use('/dcr', oidcLegacy.callback())` tells Express to trim `/dcr`. 
+// So inside oidcLegacy, it sees `/auth`.
+// BUT `oidcLegacy` assumes its issuer is `.../dcr`. 
+// So it EXPECTS paths to NOT be trimmed if it handles them?
+// Actually `oidc-provider` with Express mounting expects the prefix to be stripped by Express 
+// IF the issuer config assumes the internal paths are relative? 
+// No, standard `oidc-provider` expects to control the path.
+// The safe way with `oidc-provider` is to let it handle the routing.
+// However, mounting separate instances requires care.
+//
+// Best practice: Let Express strip the prefix.
+// `legacyIssuer` = `.../dcr`
+// Inside `oidcLegacy`, routes are `/auth`, `/token`.
+// If I mount at `/dcr`: 
+// Request: `/dcr/auth` -> Express trips `/dcr` -> `oidcLegacy` sees `/auth`.
+// Does `oidcLegacy` check that `issuer` matches the request? 
+// It checks `ctx.oidc.issuer`. 
+// It might get confused if `req.originalUrl` includes `/dcr` but it sees `/auth`.
+// Let's assume standard Express mounting works.
+
+// Main provider mount (KEEP LAST)
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));

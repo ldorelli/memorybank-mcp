@@ -512,13 +512,11 @@ app.get('/openapi.json', (req, res) => {
     });
 });
 
-app.get('/', authMiddleware, handleMcpRequest);
-app.get('/mcp', authMiddleware, handleMcpRequest);
-app.delete('/mcp', authMiddleware, handleMcpRequest);
-
 // Also handle the initialization message at root
 app.options('/', cors());
 app.options('/mcp', cors());
+app.options('/dcr', cors()); // Add CORS for DCR routes
+app.options('/dcr/mcp', cors()); // Add CORS for DCR routes
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
