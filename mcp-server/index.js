@@ -70,6 +70,15 @@ async function authMiddleware(req, res, next) {
 
 const AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'https://localhost:3000';
 
+// OAuth Protected Resource endpoint (RFC 9728) - Root
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
+    res.json({
+        resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+        authorization_servers: [AUTH_SERVER_URL],
+        scopes_supported: ["openid", "memories:read", "memories:write"]
+    });
+});
+
 // ============ LEGACY DCR ROUTES (Testing) ============
 // These endpoints point to the "Legacy" Auth Provider (no metadata support)
 const LEGACY_AUTH_SERVER_URL = `${AUTH_SERVER_URL}/dcr`;
