@@ -7,28 +7,47 @@
     <title>Authorize - MemoryBank</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=VT323&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
+    <style>
+        .client-logo {
+            display: block;
+            margin: 0 auto 1rem auto;
+            border: 2px solid #ddd;
+            padding: 4px;
+            background: white;
+            image-rendering: pixelated;
+            /* Matching the retro theme */
+        }
+    </style>
 </head>
 
 <body>
     <div class="scanlines"></div>
     <div class="container">
         <img src="/logo.png" alt="MemoryBank" class="logo">
-        <h1>AUTHORIZE</h1>
-        <div class="subtitle">
-            <span style="color: var(--primary-color); font-weight: bold;">
-                <%= client.client_id || 'Client' %>
-            </span>
-            requests access
-        </div>
+        <% const logo=client.logoUri || client.logo_uri; %>
+            <% const name=client.clientName || client.client_name || client.client_id || 'Client' ; %>
 
-        <div style="text-align: left; margin-bottom: 1rem;">
-            This application is requesting permission to:
-        </div>
+                <% if (logo) { %>
+                    <img src="<%= logo %>" alt="<%= name %> Logo" class="client-logo"
+                        style="max-width: 64px; max-height: 64px; margin-bottom: 1rem; border-radius: 8px;">
+                    <% } %>
+                        <h1>AUTHORIZE</h1>
+                        <div class="subtitle">
+                            <span style="color: var(--primary-color); font-weight: bold;">
+                                <%= name %>
+                            </span>
+                            requests access
+                        </div>
 
-        <ul class="scopes">
-            <% var scopeFriendlyNames={ 'openid' : 'View your basic profile' , 'email' : 'View your email address'
-                , 'offline_access' : 'Maintain access when you are away' , 'memories:read' : '📖 Read your memories'
-                , 'memories:write' : '✏️ Create and edit memories' }; var requestedScopes=(params.scope || '' ).split(' ').filter(function(s) { return s; });
+                        <div style="text-align: left; margin-bottom: 1rem;">
+                            This application is requesting permission to:
+                        </div>
+
+                        <ul class="scopes">
+                            <% var scopeFriendlyNames={ 'openid' : 'View your basic profile' , 'email'
+                                : 'View your email address' , 'offline_access' : 'Maintain access when you are away'
+                                , 'memories:read' : '📖 Read your memories' , 'memories:write'
+                                : '✏️ Create and edit memories' }; var requestedScopes=(params.scope || '' ).split(' ').filter(function(s) { return s; });
             for (var i = 0; i < requestedScopes.length; i++) {
                 var scope = requestedScopes[i];
             %>

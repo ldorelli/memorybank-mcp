@@ -205,17 +205,20 @@ const configuration = {
 
                 return {
                     client_id: id,
-                    client_secret: undefined, // Public client (no secret) or use "client_secret_post" if they have one? 
-                    // Metadata spec usually implies Public Client for native apps OR confidential for web.
-                    // For MCP, usually there is no pre-shared secret in this flow yet. 
-                    // We treat as Public Client (PKCE recommended, but we disabled PKCE enforcement for MVP).
+                    client_secret: undefined,
                     token_endpoint_auth_method: 'none',
 
-                    grant_types: ['authorization_code', 'implicit'], // Support both
+                    grant_types: ['authorization_code', 'implicit'],
                     redirect_uris: metadata.redirect_uris,
                     response_types: ['code'],
-                    // Ensure we allow the scopes they might ask for
                     scope: metadata.scope || DEFAULT_SCOPES,
+
+                    // Metadata fields for Enhanced Consent Screen
+                    client_name: metadata.client_name,
+                    logo_uri: metadata.logo_uri,
+                    client_uri: metadata.client_uri,
+                    policy_uri: metadata.policy_uri,
+                    tos_uri: metadata.tos_uri,
                 };
 
             } catch (err) {
@@ -418,9 +421,10 @@ app.get('/interaction/:uid', async (req, res, next) => {
         }
 
         if (prompt.name === 'consent') {
+            const client = await oidc.Client.find(details.params.client_id);
             return res.render('consent', {
                 uid,
-                client: details.params,
+                client,
                 details: prompt.details,
                 params,
                 title: 'Authorize'
