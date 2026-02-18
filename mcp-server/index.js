@@ -132,6 +132,17 @@ app.get('/dcr/mcp/.well-known/oauth-protected-resource', (req, res) => {
     });
 });
 
+// OpenAI Domain Verification Endpoint
+app.get('/.well-known/openai-app-domain-verification', (req, res) => {
+    // Return exact token as plain text
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSvOlGu_wYDNZ5X04');
+});
+
+// Alias for Legacy DCR check if they check that domain too (optional but safe)
+app.get('/dcr/.well-known/openai-app-domain-verification', (req, res) => {
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSvOlGu_wYDNZ5X04');
+});
+
 // MCP Server Initialization with proper metadata
 const server = new McpServer({
     name: "memorybank",
