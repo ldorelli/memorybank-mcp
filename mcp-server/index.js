@@ -148,7 +148,7 @@ app.get('/.well-known/openai-apps-challenge', (req, res) => {
     res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
 });
 
-const { encrypt, decrypt } = require('./utils/crypto');
+import { encrypt, decrypt } from './utils/crypto.js';
 
 // MCP Server Initialization with proper metadata
 const server = new McpServer({

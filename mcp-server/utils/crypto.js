@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_Length = 32; // 256 bits
@@ -77,5 +77,3 @@ function decrypt(text) {
         return '[Encrypted Content - De/Encryption Failed]';
     }
 }
-
-module.exports = { encrypt, decrypt };
