@@ -20,7 +20,7 @@ function getKey() {
  * Encrypts text using AES-256-GCM
  * Format: iv:authTag:encryptedContent (hex encoded parts joined by :)
  */
-function encrypt(text) {
+export function encrypt(text) {
     if (!text) return text;
 
     const iv = crypto.randomBytes(16); // 12 bytes is standard for GCM, but 16 is fine too. Let's stick to 12 (96 bits) as per NIST? 
@@ -48,7 +48,7 @@ function encrypt(text) {
  * Decrypts text using AES-256-GCM
  * Expects format: iv:authTag:encryptedContent
  */
-function decrypt(text) {
+export function decrypt(text) {
     if (!text) return text;
     // Check if it looks encrypted (3 parts separated by :)
     // If not, return original (migration path for existing unencrypted notes!)
