@@ -148,6 +148,8 @@ app.get('/.well-known/openai-apps-challenge', (req, res) => {
     res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
 });
 
+const { encrypt, decrypt } = require('./utils/crypto');
+
 // MCP Server Initialization with proper metadata
 const server = new McpServer({
     name: "memorybank",
@@ -184,9 +186,12 @@ server.tool(
                 };
             }
 
+            // Encrypt content before storage
+            const encryptedContent = encrypt(content);
+
             const res = await pool.query(
                 "INSERT INTO notes (user_id, content) VALUES ($1, $2) RETURNING id, created_at",
-                [userId, content]
+                [userId, encryptedContent]
             );
 
             const result = {
@@ -240,9 +245,10 @@ server.tool(
                 };
             }
 
-            const memoriesList = res.rows.map((row, i) =>
-                `${i + 1}. [${row.id}] ${row.content.substring(0, 100)}${row.content.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`
-            ).join('\n\n');
+            const memoriesList = res.rows.map((row, i) => {
+                const decryptedContent = decrypt(row.content);
+                return `${i + 1}. [${row.id}] ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`;
+            }).join('\n\n');
 
             return {
                 content: [{
@@ -278,25 +284,35 @@ server.tool(
                 };
             }
 
+            // Fetch ALL notes for user (cannot use SQL LIKE on encrypted data)
             const res = await pool.query(
-                "SELECT id, content, created_at FROM notes WHERE user_id = $1 AND content ILIKE $2 ORDER BY created_at DESC LIMIT 20",
-                [userId, `%${query}%`]
+                "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC",
+                [userId]
             );
 
-            if (res.rows.length === 0) {
+            // Decrypt and filter in memory
+            const matches = res.rows
+                .map(row => ({
+                    ...row,
+                    content: decrypt(row.content)
+                }))
+                .filter(row => row.content.toLowerCase().includes(query.toLowerCase()))
+                .slice(0, 20); // Limit to top 20 matches
+
+            if (matches.length === 0) {
                 return {
                     content: [{ type: "text", text: `🔍 No memories found matching "${query}"` }]
                 };
             }
 
-            const resultsList = res.rows.map((row, i) =>
-                `${i + 1}. [${row.id}] ${row.content.substring(0, 100)}${row.content.length > 100 ? '...' : ''}`
+            const resultsList = matches.map((row, i) =>
+                `${i + 1}. [${row.id}] ${row.content.substring(0, 100)}${row.content.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`
             ).join('\n\n');
 
             return {
                 content: [{
                     type: "text",
-                    text: `🔍 Found ${res.rows.length} memories matching "${query}":\n\n${resultsList}`
+                    text: `🔍 Found ${matches.length} memories matching "${query}":\n\n${resultsList}`
                 }]
             };
         } catch (err) {
