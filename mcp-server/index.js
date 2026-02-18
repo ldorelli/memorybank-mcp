@@ -99,14 +99,14 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
         return res.json({
             resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
             authorization_servers: [LEGACY_AUTH_SERVER_URL],
-            scopes_supported: ["openid", "memories:read", "memories:write"]
+            scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
         });
     }
 
     res.json({
         resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
         authorization_servers: [AUTH_SERVER_URL],
-        scopes_supported: ["openid", "memories:read", "memories:write"]
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
 });
 
@@ -119,7 +119,7 @@ app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
     res.json({
         resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
         authorization_servers: [LEGACY_AUTH_SERVER_URL],
-        scopes_supported: ["openid", "memories:read", "memories:write"]
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
 });
 
@@ -128,7 +128,7 @@ app.get('/dcr/mcp/.well-known/oauth-protected-resource', (req, res) => {
     res.json({
         resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
         authorization_servers: [LEGACY_AUTH_SERVER_URL],
-        scopes_supported: ["openid", "memories:read", "memories:write"]
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
 });
 
