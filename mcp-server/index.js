@@ -143,6 +143,11 @@ app.get('/dcr/.well-known/openai-app-domain-verification', (req, res) => {
     res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSvOlGu_wYDNZ5X04');
 });
 
+// User requested 'openai-apps-challenge' path (Alternate verification)
+app.get('/.well-known/openai-apps-challenge', (req, res) => {
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSvOlGu_wYDNZ5X04');
+});
+
 // MCP Server Initialization with proper metadata
 const server = new McpServer({
     name: "memorybank",
