@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard - 8-Bit Memory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+    <div class="scanlines"></div>
+    <div class="container">
+        <img src="/logo.png" alt="8-Bit Memory" class="logo">
+        <h1>MEMORY VAULT</h1>
+        <div class="subtitle">Welcome back, agent</div>
+
+        <div style="margin: 2rem 0; text-align: center;">
+            <div
+                style="background: rgba(124, 58, 237, 0.1); border: 1px solid var(--accent-primary, #7c3aed); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="font-size: 0.85em; color: var(--text-secondary, #94a3b8); margin-bottom: 0.5rem;">LOGGED IN
+                    AS</div>
+                <div style="font-size: 1.2em; color: var(--accent-primary, #a78bfa);">
+                    <%= email %>
+                </div>
+            </div>
+
+            <div
+                style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; padding: 1.5rem; text-align: left;">
+                <div style="font-size: 0.85em; color: var(--text-secondary, #94a3b8); margin-bottom: 1rem;">ACCOUNT
+                    STATUS</div>
+                <p>✅ Email verified</p>
+                <p>🔐 Encryption active</p>
+                <p>🤖 Ready for MCP connections</p>
+            </div>
+        </div>
+
+        <div style="margin: 2rem 0; text-align: center;">
+            <p style="color: var(--text-secondary, #94a3b8); font-size: 0.9em;">
+                Connect from any MCP-compatible client using:<br />
+                <code style="color: var(--accent-primary, #a78bfa);">https://mcp.8bitmemory.com</code>
+            </p>
+        </div>
+
+        <div class="links" style="margin-top: 2rem;">
+            <a href="/logout">LOGOUT</a>
+            | <a href="/support">SUPPORT</a>
+        </div>
+
+        <div class="links" style="font-size: 0.8em; margin-top: 2rem; opacity: 0.7;">
+            <a href="/tos">TERMS</a> &bull; <a href="/privacy">PRIVACY</a>
+        </div>
+    </div>
+</body>
+
+</html>

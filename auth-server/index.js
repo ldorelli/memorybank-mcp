@@ -1,6 +1,7 @@
 import Provider from 'oidc-provider';
 import express from 'express';
 import bodyParser from 'body-parser';
+import cookieParser from 'cookie-parser';
 import pgAdapter from './adapter.js'; // Note .js extension
 import path from 'path';
 import pg from 'pg';
@@ -42,6 +43,7 @@ const app = express();
 app.enable('trust proxy'); // Required for Railway/Load Balancers
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(cookieParser());
 
 // Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
 // PLACED HERE to ensure it hits before any middleware or other routes
@@ -454,6 +456,124 @@ app.get('/tos', (req, res) => {
 
 app.get('/privacy', (req, res) => {
     res.render('privacy', { title: 'Privacy Policy' });
+});
+
+// ========================
+// Standalone Auth Routes
+// (For users visiting 8bitmemory.com directly, not via OIDC)
+// ========================
+
+// Simple session cookie helper
+const SESSION_COOKIE = '8bm_session';
+const COOKIE_SECRET = (process.env.COOKIE_KEYS || 'fallback_dev_key').split(',')[0];
+
+function setSessionCookie(res, userId, email) {
+    const payload = Buffer.from(JSON.stringify({ userId, email })).toString('base64');
+    // Simple HMAC signature
+    const sig = crypto.createHmac('sha256', COOKIE_SECRET).update(payload).digest('hex');
+    res.cookie(SESSION_COOKIE, `${payload}.${sig}`, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: 'Lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/',
+    });
+}
+
+function getSessionFromCookie(req) {
+    const cookie = req.cookies?.[SESSION_COOKIE];
+    if (!cookie) return null;
+    const [payload, sig] = cookie.split('.');
+    if (!payload || !sig) return null;
+    const expected = crypto.createHmac('sha256', COOKIE_SECRET).update(payload).digest('hex');
+    if (sig !== expected) return null;
+    try {
+        return JSON.parse(Buffer.from(payload, 'base64').toString());
+    } catch {
+        return null;
+    }
+}
+
+// Standalone Login (GET)
+app.get('/login', (req, res) => {
+    // If already logged in, redirect to dashboard
+    const session = getSessionFromCookie(req);
+    if (session) {
+        return res.redirect('/dashboard');
+    }
+    res.render('login', {
+        uid: null,
+        client: {},
+        details: {},
+        params: {},
+        title: 'Sign-in',
+        flash: null
+    });
+});
+
+// Standalone Login (POST)
+app.post('/login', async (req, res) => {
+    try {
+        const email = req.body.login || req.body.email;
+        const { password } = req.body;
+
+        const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+
+        if (userRes.rows.length === 0) {
+            return res.render('login', {
+                uid: null, client: {}, details: {}, params: {},
+                title: 'Sign-in',
+                flash: 'Invalid email or password'
+            });
+        }
+
+        const user = userRes.rows[0];
+
+        // Check verification
+        if (!user.email_verified) {
+            return res.render('login', {
+                uid: null, client: {}, details: {}, params: {},
+                title: 'Sign-in',
+                flash: 'Please verify your email first. <a href="/resend-verification?email=' + encodeURIComponent(email) + '">Resend verification email</a>'
+            });
+        }
+
+        // Check password
+        const isValid = await verifyPassword(password, user.password_hash);
+        if (!isValid) {
+            return res.render('login', {
+                uid: null, client: {}, details: {}, params: {},
+                title: 'Sign-in',
+                flash: 'Invalid email or password'
+            });
+        }
+
+        // Set session cookie and redirect to dashboard
+        setSessionCookie(res, user.id, user.email);
+        res.redirect('/dashboard');
+    } catch (err) {
+        console.error('Standalone login error:', err);
+        res.render('login', {
+            uid: null, client: {}, details: {}, params: {},
+            title: 'Sign-in',
+            flash: 'An error occurred. Please try again.'
+        });
+    }
+});
+
+// Dashboard
+app.get('/dashboard', (req, res) => {
+    const session = getSessionFromCookie(req);
+    if (!session) {
+        return res.redirect('/login');
+    }
+    res.render('dashboard', { email: session.email });
+});
+
+// Logout
+app.get('/logout', (req, res) => {
+    res.clearCookie(SESSION_COOKIE, { path: '/' });
+    res.redirect('/');
 });
 
 // Standalone Signup (GET)

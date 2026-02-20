@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login - MemoryBank</title>
+    <title>Login - 8-Bit Memory</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=VT323&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -12,11 +12,9 @@
 <body>
     <div class="scanlines"></div>
     <div class="container">
-        <img src="/logo.png" alt="MemoryBank" class="logo">
+        <img src="/logo.png" alt="8-Bit Memory" class="logo">
         <h1>ACCESS VAULT</h1>
         <div class="subtitle">Authenticate to continue</div>
-
-        <!-- Debugging: <%= JSON.stringify(params) %> -->
 
         <% if (flash) { %>
             <div class="flash-error">
@@ -24,10 +22,11 @@
             </div>
             <% } %>
 
-                <form autocomplete="off" action="/interaction/<%= uid %>/login" method="post">
+                <form autocomplete="off" action="<%= uid ? `/interaction/${uid}/login` : '/login' %>" method="post">
                     <div class="input-group">
                         <label for="login">ACCESS ID</label>
-                        <input required type="email" name="login" id="login" placeholder="user@memory.bank" autofocus>
+                        <input required type="email" name="login" id="login" placeholder="user@8bitmemory.com"
+                            autofocus>
                     </div>
 
                     <div class="input-group">
@@ -38,7 +37,12 @@
                     <button type="submit">UNLOCK</button>
 
                     <div class="links">
-                        NO ACCOUNT? <a href="/interaction/<%= uid %>/signup">INITIALIZE HERE</a>
+                        NO ACCOUNT?
+                        <% if (uid) { %>
+                            <a href="/interaction/<%= uid %>/signup">INITIALIZE HERE</a>
+                            <% } else { %>
+                                <a href="/signup">INITIALIZE HERE</a>
+                                <% } %>
                     </div>
                 </form>
     </div>
