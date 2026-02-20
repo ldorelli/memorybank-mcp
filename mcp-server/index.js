@@ -28,6 +28,23 @@ app.use((req, res, next) => {
     console.log(`[DEBUG REQUEST] ${req.method} ${req.url} (path: ${req.path})`);
     console.log(`[DEBUG HEADERS] Host: ${req.headers.host}, X-Forwarded-Proto: ${req.headers['x-forwarded-proto']}, X-Forwarded-For: ${req.headers['x-forwarded-for']}`);
 
+    // Direct bypass for .well-known to avoid any Express router 301 behavior
+    if (req.path === '/.well-known/oauth-protected-resource') {
+        const resourceParam = req.query.resource || '';
+        if (resourceParam.includes('/dcr')) {
+            return res.json({
+                resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+                authorization_servers: [`${process.env.AUTH_SERVER_URL || 'https://localhost:3000'}/dcr`],
+                scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+            });
+        }
+        return res.json({
+            resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+            authorization_servers: [process.env.AUTH_SERVER_URL || 'https://localhost:3000'],
+            scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+        });
+    }
+
     // Intercept redirect to see who is doing it
     const originalRedirect = res.redirect;
     res.redirect = function (status, url) {
