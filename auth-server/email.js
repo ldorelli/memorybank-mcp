@@ -20,20 +20,33 @@ if (process.env.SMTP_HOST) {
         socketTimeout: 10000,
     });
 } else if (process.env.RESEND_API_KEY) {
-    // Resend uses SMTP interface compatible with nodemailer
-    transporter = nodemailer.createTransport({
-        host: 'smtp.resend.com',
-        port: 465,
-        secure: true,
-        auth: {
-            user: 'resend',
-            pass: process.env.RESEND_API_KEY,
-        },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 10000,
-    });
-    console.log('📧 Email configured with Resend SMTP');
+    // Use Resend REST API instead of SMTP to bypass outbound port blocking on Railway
+    console.log('📧 Email configured with Resend API (REST)');
+    transporter = {
+        sendMail: async (opts) => {
+            const res = await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    from: opts.from,
+                    to: opts.to, // Ensure it's an array if multiple, but here it's a string
+                    subject: opts.subject,
+                    html: opts.html
+                })
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`Resend API Error: ${res.status} ${text}`);
+            }
+
+            const data = await res.json();
+            return { messageId: data.id };
+        }
+    };
 } else {
     console.warn('⚠️  No email config found (SMTP_HOST or RESEND_API_KEY). Emails will be logged only.');
     transporter = {
