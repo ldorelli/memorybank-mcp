@@ -23,6 +23,17 @@ const app = express();
 app.set('trust proxy', true); // Required: Railway terminates SSL, forwards HTTP internally
 app.set('strict routing', false);
 
+// Force HTTPS in production (Railway LB terminates SSL)
+if (process.env.NODE_ENV === 'production') {
+    app.use((req, res, next) => {
+        req.headers['x-forwarded-proto'] = 'https';
+        if (!req.connection.encrypted) {
+            req.connection.encrypted = true;
+        }
+        next();
+    });
+}
+
 // Global Debug Logger
 app.use((req, res, next) => {
     console.log(`[DEBUG REQUEST] ${req.method} ${req.url} (path: ${req.path})`);
