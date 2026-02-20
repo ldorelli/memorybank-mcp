@@ -21,6 +21,23 @@ dotenv.config({ path: join(__dirname, '../.env') });
 
 const app = express();
 app.set('trust proxy', true); // Required: Railway terminates SSL, forwards HTTP internally
+app.set('strict routing', false);
+
+// Global Debug Logger
+app.use((req, res, next) => {
+    console.log(`[DEBUG REQUEST] ${req.method} ${req.url} (path: ${req.path})`);
+    console.log(`[DEBUG HEADERS] Host: ${req.headers.host}, X-Forwarded-Proto: ${req.headers['x-forwarded-proto']}, X-Forwarded-For: ${req.headers['x-forwarded-for']}`);
+
+    // Intercept redirect to see who is doing it
+    const originalRedirect = res.redirect;
+    res.redirect = function (status, url) {
+        console.log(`[DEBUG REDIRECT] Intercepted redirect to: ${url} with status: ${status}`);
+        return originalRedirect.call(this, status, url);
+    };
+
+    next();
+});
+
 const { Pool } = pg;
 
 // Database Connection
@@ -816,6 +833,7 @@ app.use(express.json());
 
 // OAuth Protected Resource endpoint (RFC 9728) - Root
 app.get('/.well-known/oauth-protected-resource', (req, res) => {
+    console.log('[DEBUG HANDLER] Reached /.well-known/oauth-protected-resource');
     const resourceParam = req.query.resource || '';
     if (resourceParam.includes('/dcr')) {
         return res.json({
@@ -832,6 +850,7 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
 });
 
 app.get('/test-auth-meta', (req, res) => {
+    console.log('[DEBUG HANDLER] Reached /test-auth-meta');
     res.json({
         resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
         authorization_servers: [AUTH_SERVER_URL],
