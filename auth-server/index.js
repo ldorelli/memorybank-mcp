@@ -97,6 +97,29 @@ app.get('/dcr/.well-known/oauth-authorization-server', (req, res) => {
     });
 });
 
+// BasicAuth Metadata (RFC 8414) for /basicauth path
+app.get('/basicauth/.well-known/oauth-authorization-server', (req, res) => {
+    console.log('Serving RFC 8414 Metadata for /basicauth');
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Content-Type', 'application/json');
+
+    const baseUrl = `${issuer.replace(/\/$/, '')}/basicauth`;
+    res.json({
+        issuer: baseUrl,
+        authorization_endpoint: `${baseUrl}/auth`,
+        token_endpoint: `${baseUrl}/token`,
+        jwks_uri: `${baseUrl}/jwks`,
+        client_id_metadata_document_supported: false,
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        response_types_supported: ['code'],
+        response_modes_supported: ['query', 'fragment'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+        revocation_endpoint: `${baseUrl}/token/revocation`,
+        introspection_endpoint: `${baseUrl}/token/introspection`,
+    });
+});
+
 // Force HTTPS in production (Railway LB terminates SSL)
 // FIX: We need to fool both Express (trust proxy) and the Cookies library (req.connection.encrypted)
 if (process.env.NODE_ENV === 'production') {
@@ -352,6 +375,48 @@ const legacyConfiguration = {
 
 const oidcLegacy = new Provider(legacyIssuer, legacyConfiguration);
 
+// BasicAuth Provider (Static Clients Only - No DCR, No Metadata Support)
+// Mounted at /basicauth for Google OAuth and other predefined clients
+const basicAuthIssuer = `${issuer}/basicauth`;
+const basicAuthConfiguration = {
+    ...configuration,
+    findClient: undefined,
+    clients: [{
+        client_id: 'google_mcp_client',
+        client_secret: process.env.GOOGLE_MCP_CLIENT_SECRET || 'google_secret',
+        grant_types: ['authorization_code'],
+        redirect_uris: [
+            'https://oauth-redirect.googleusercontent.com/r/play-console-mcp-gal',
+            'https://oauth-redirect-sandbox.googleusercontent.com/r/play-console-mcp-gal-test',
+            'https://oauth-redirect-test.googleusercontent.com/r/play-console-mcp-gal-test'
+        ],
+        response_types: ['code'],
+        scope: DEFAULT_SCOPES,
+    }],
+    jwt: { ...configuration.jwt },
+    jwks: configuration.jwks,
+    adapter: pgAdapter,
+    discovery: {
+        client_id_metadata_document_supported: false,
+    },
+    features: {
+        ...configuration.features,
+        registration: { enabled: false }, // Explicitly disable DCR
+        resourceIndicators: {
+            ...configuration.features.resourceIndicators,
+            defaultResource: (ctx) => process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+            getResourceServerInfo: (ctx, resourceIndicator, client) => ({
+                scope: 'openid memories:read memories:write',
+                audience: resourceIndicator,
+                accessTokenFormat: 'jwt',
+                accessTokenTTL: 3600,
+            }),
+        }
+    }
+};
+
+const oidcBasicAuth = new Provider(basicAuthIssuer, basicAuthConfiguration);
+
 // Middleware to inject default scopes into authorization requests
 // Verify if we need this for legacy too. Yes.
 const injectScopes = (prefix) => async (ctx, next) => {
@@ -366,10 +431,12 @@ const injectScopes = (prefix) => async (ctx, next) => {
 
 oidc.use(injectScopes(''));
 oidcLegacy.use(injectScopes('/dcr'));
+oidcBasicAuth.use(injectScopes('/basicauth'));
 
 // Mount Providers
-// Legacy first to catch specific route
+// Mount specific routes first
 app.use('/dcr', oidcLegacy.callback());
+app.use('/basicauth', oidcBasicAuth.callback());
 
 // Main provider handles root
 // Note: oidc.callback() handles all routes matching issuer. 
@@ -621,8 +688,8 @@ app.post('/signup', async (req, res) => {
             [email, hash, false, token, expires]
         );
 
-        // Send verification email
-        await sendVerificationEmail(email, token);
+        // Send verification email in background
+        sendVerificationEmail(email, token).catch(console.error);
 
         res.render('verify_pending', { email });
     } catch (err) {
@@ -679,8 +746,8 @@ app.post('/interaction/:uid/signup', async (req, res, next) => {
             [email, hash, false, token, expires]
         );
 
-        // Send verification email
-        await sendVerificationEmail(email, token);
+        // Send verification email in background
+        sendVerificationEmail(email, token).catch(console.error);
 
         // Show "check your email" page (don't auto-login until verified)
         res.render('verify_pending', { email });
@@ -778,7 +845,7 @@ app.get('/resend-verification', async (req, res) => {
             [token, expires, user.id]
         );
 
-        await sendVerificationEmail(email, token);
+        sendVerificationEmail(email, token).catch(console.error);
         console.log(`📧 Resent verification email to ${email}`);
 
         res.render('verify_pending', { email });

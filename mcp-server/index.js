@@ -838,7 +838,16 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
 app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
     res.json({
         resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-        authorization_servers: [LEGACY_AUTH_SERVER_URL],
+        authorization_servers: [`${process.env.AUTH_SERVER_URL || 'https://8bitmemory.com'}/dcr`],
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+    });
+});
+
+// BasicAuth metadata endpoints
+app.get('/basicauth/.well-known/oauth-protected-resource', (req, res) => {
+    res.json({
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+        authorization_servers: [`${process.env.AUTH_SERVER_URL || 'https://8bitmemory.com'}/basicauth`],
         scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
 });
@@ -856,6 +865,9 @@ app.get('/.well-known/openai-app-domain-verification', (req, res) => {
     res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
 });
 app.get('/dcr/.well-known/openai-app-domain-verification', (req, res) => {
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
+});
+app.get('/basicauth/.well-known/openai-app-domain-verification', (req, res) => {
     res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
 });
 app.get('/.well-known/openai-apps-challenge', (req, res) => {
