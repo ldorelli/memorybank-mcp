@@ -10,6 +10,7 @@ import fs from 'fs';
 import https from 'https';
 import crypto from 'node:crypto'; // For password hashing
 import { promisify } from 'util';
+import { sendVerificationEmail } from './email.js';
 const scrypt = promisify(crypto.scrypt);
 
 // Password Helpers
@@ -162,7 +163,7 @@ const configuration = {
                 grant_types: ['authorization_code'],
                 redirect_uris: [
                     'https://oauth.pstmn.io/v1/callback',
-                    'https://memorybank-mcp.up.railway.app/health'
+                    'https://mcp.8bitmemory.com/health'
                 ],
                 response_types: ['code'],
                 scope: DEFAULT_SCOPES,
@@ -258,7 +259,7 @@ const configuration = {
             enabled: true,
             // Default resource if none specified
             defaultResource: (ctx) => {
-                return process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
+                return process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com';
             },
             // Return JWT format for all resources
             getResourceServerInfo: (ctx, resourceIndicator, client) => {
@@ -318,7 +319,7 @@ const legacyConfiguration = {
         grant_types: ['authorization_code'],
         redirect_uris: [
             'https://oauth.pstmn.io/v1/callback',
-            'https://memorybank-mcp.up.railway.app/health'
+            'https://mcp.8bitmemory.com/health'
         ],
         response_types: ['code'],
         scope: DEFAULT_SCOPES,
@@ -336,7 +337,7 @@ const legacyConfiguration = {
         ...configuration.features,
         resourceIndicators: {
             ...configuration.features.resourceIndicators,
-            defaultResource: (ctx) => process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+            defaultResource: (ctx) => process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
             getResourceServerInfo: (ctx, resourceIndicator, client) => ({
                 scope: 'openid memories:read memories:write',
                 audience: resourceIndicator,
@@ -464,47 +465,49 @@ app.get('/signup', (req, res) => {
     });
 });
 
+// Email validation helper
+function isValidEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email) && email.length <= 255;
+}
+
 // Standalone Signup (POST)
 app.post('/signup', async (req, res) => {
     try {
         const { email, password } = req.body;
 
+        // Validate
+        if (!isValidEmail(email)) {
+            return res.render('signup', { uid: null, client: null, flash: 'Please enter a valid email address.' });
+        }
+        if (!password || password.length < 8) {
+            return res.render('signup', { uid: null, client: null, flash: 'Password must be at least 8 characters.' });
+        }
+
         // Check availability
         const check = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
         if (check.rows.length > 0) {
-            return res.render('signup', {
-                uid: null,
-                client: null,
-                flash: 'Email already registered. Please sign in.'
-            });
+            return res.render('signup', { uid: null, client: null, flash: 'Email already registered. Please sign in.' });
         }
 
-        // Hash & Create
+        // Generate verification token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+        // Hash & Create with verification
         const hash = await hashPassword(password);
         await pool.query(
-            'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
-            [email, hash]
+            'INSERT INTO users (email, password_hash, email_verified, verification_token, verification_expires) VALUES ($1, $2, $3, $4, $5)',
+            [email, hash, false, token, expires]
         );
 
-        // Redirect to Interaction Login if we have a uid param (hybrid flow? no, standalone meant redirection to separate login)
-        // For standalone, we redirect to success or login page
-        // But since this is a separate app entrance, let's show a success page or redirect to oidc flow start?
-        // Let's redirect to a simple success page or the main login if they came from there.
+        // Send verification email
+        await sendVerificationEmail(email, token);
 
-        // Actually, users might expect to be logged in. But for OIDC, we need an interaction session.
-        // For standalone, just say "Account created" and link to Login.
-
-        res.render('login_success', {
-            message: 'Account created successfully! You can now log in.'
-        });
-
+        res.render('verify_pending', { email });
     } catch (err) {
         console.error(err);
-        res.render('signup', {
-            uid: null,
-            client: null,
-            flash: 'Error creating account.'
-        });
+        res.render('signup', { uid: null, client: null, flash: 'Error creating account.' });
     }
 });
 
@@ -524,34 +527,43 @@ app.get('/interaction/:uid/signup', async (req, res, next) => {
     }
 });
 
-// POST /signup
+// POST /interaction/:uid/signup (OIDC flow)
 app.post('/interaction/:uid/signup', async (req, res, next) => {
     try {
         const { uid } = req.params;
         const details = await oidc.interactionDetails(req, res);
         const { email, password } = req.body;
 
+        // Validate
+        if (!isValidEmail(email)) {
+            return res.render('signup', { uid, client: details.params.client_id, flash: 'Please enter a valid email address.' });
+        }
+        if (!password || password.length < 8) {
+            return res.render('signup', { uid, client: details.params.client_id, flash: 'Password must be at least 8 characters.' });
+        }
+
         // Check availability
         const check = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
         if (check.rows.length > 0) {
-            return res.render('signup', {
-                uid, client: details.params.client_id,
-                flash: 'Email already registered. Please sign in.'
-            });
+            return res.render('signup', { uid, client: details.params.client_id, flash: 'Email already registered. Please sign in.' });
         }
 
-        // Hash & Create
+        // Generate verification token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        // Hash & Create with verification
         const hash = await hashPassword(password);
-        const newUser = await pool.query(
-            'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *',
-            [email, hash]
+        await pool.query(
+            'INSERT INTO users (email, password_hash, email_verified, verification_token, verification_expires) VALUES ($1, $2, $3, $4, $5)',
+            [email, hash, false, token, expires]
         );
 
-        const result = {
-            login: { accountId: newUser.rows[0].id },
-        };
+        // Send verification email
+        await sendVerificationEmail(email, token);
 
-        await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: false });
+        // Show "check your email" page (don't auto-login until verified)
+        res.render('verify_pending', { email });
     } catch (err) {
         next(err);
     }
@@ -580,6 +592,15 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
 
         const user = userRes.rows[0];
 
+        // Check if email is verified
+        if (!user.email_verified) {
+            return res.render('login', {
+                uid, client: {}, details: {}, params: {},
+                title: 'Sign-in',
+                flash: 'Please verify your email first. Check your inbox for the verification link.'
+            });
+        }
+
         // Check Password
         const isValid = await verifyPassword(password, user.password_hash);
         if (!isValid) {
@@ -600,6 +621,45 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
         await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: false });
     } catch (err) {
         next(err);
+    }
+});
+
+// Email Verification Route
+app.get('/verify', async (req, res) => {
+    const { token } = req.query;
+
+    if (!token) {
+        return res.render('verify_success', { error: 'Invalid verification link.' });
+    }
+
+    try {
+        const result = await pool.query(
+            'SELECT id, email, verification_expires FROM users WHERE verification_token = $1 AND email_verified = false',
+            [token]
+        );
+
+        if (result.rows.length === 0) {
+            return res.render('verify_success', { error: 'Invalid or expired verification link.' });
+        }
+
+        const user = result.rows[0];
+
+        // Check expiry
+        if (new Date() > new Date(user.verification_expires)) {
+            return res.render('verify_success', { error: 'This verification link has expired. Please sign up again.' });
+        }
+
+        // Mark as verified
+        await pool.query(
+            'UPDATE users SET email_verified = true, verification_token = NULL, verification_expires = NULL WHERE id = $1',
+            [user.id]
+        );
+
+        console.log(`✅ Email verified for ${user.email}`);
+        res.render('verify_success', { error: null });
+    } catch (err) {
+        console.error('Verification error:', err);
+        res.render('verify_success', { error: 'An error occurred during verification.' });
     }
 });
 

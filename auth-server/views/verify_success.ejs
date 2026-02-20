@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Email Verified - 8-Bit Memory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+    <div class="scanlines"></div>
+    <div class="container">
+        <img src="/logo.png" alt="8-Bit Memory" class="logo">
+        <h1>EMAIL VERIFIED ✓</h1>
+        <div class="subtitle">Your memory vault is ready!</div>
+
+        <div style="text-align: center; margin: 2rem 0; font-size: 1.1em;">
+            <p>Your email has been verified successfully.</p>
+            <p>You can now log in with any MCP client.</p>
+        </div>
+
+        <% if (error) { %>
+            <div class="flash-error">
+                <%= error %>
+            </div>
+            <% } %>
+
+                <div class="links" style="margin-top: 2rem;">
+                    <a href="/">GO TO HOME</a>
+                </div>
+    </div>
+</body>
+
+</html>

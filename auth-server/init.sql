@@ -3,6 +3,9 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL, -- Use bcrypt
+  email_verified BOOLEAN DEFAULT FALSE,
+  verification_token VARCHAR(255),
+  verification_expires TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -34,3 +37,8 @@ CREATE TABLE IF NOT EXISTS user_tables (
   updated_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(user_id, name)
 );
+
+-- Migration: Add email verification columns (safe for existing DBs)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires TIMESTAMP;

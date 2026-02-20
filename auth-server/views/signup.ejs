@@ -25,12 +25,14 @@
                 <form autocomplete="off" action="<%= uid ? `/interaction/${uid}/signup` : '/signup' %>" method="post">
                     <div class="input-group">
                         <label for="email">EMAIL ACCESS ID</label>
-                        <input required type="email" name="email" id="email" placeholder="user@memory.bank" autofocus>
+                        <input required type="email" name="email" id="email" placeholder="user@8bitmemory.com" autofocus
+                            pattern="[^@\s]+@[^@\s]+\.[^@\s]+" title="Enter a valid email address">
                     </div>
 
                     <div class="input-group">
                         <label for="password">SECRET KEYCODE</label>
-                        <input required type="password" name="password" id="password" placeholder="••••••••">
+                        <input required type="password" name="password" id="password" placeholder="••••••••"
+                            minlength="8" title="Password must be at least 8 characters">
                     </div>
 
                     <button type="submit" class="login-button">INITIALIZE</button>

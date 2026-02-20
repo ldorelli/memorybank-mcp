@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Check Your Email - 8-Bit Memory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+    <div class="scanlines"></div>
+    <div class="container">
+        <img src="/logo.png" alt="8-Bit Memory" class="logo">
+        <h1>CHECK YOUR EMAIL</h1>
+        <div class="subtitle">Almost there!</div>
+
+        <div style="text-align: center; margin: 2rem 0; font-size: 1.1em; line-height: 1.6;">
+            <p>We sent a verification link to:</p>
+            <p style="color: var(--accent-primary, #a78bfa); font-weight: bold;">
+                <%= email %>
+            </p>
+            <p>Click the link in the email to activate your memory vault.</p>
+        </div>
+
+        <div style="text-align: center; color: var(--text-secondary, #94a3b8); font-size: 0.85em; margin-top: 2rem;">
+            <p>📬 Didn't get it? Check your spam folder.</p>
+            <p>Link expires in 24 hours.</p>
+        </div>
+
+        <div class="links" style="margin-top: 2rem;">
+            <a href="/">BACK TO HOME</a>
+        </div>
+    </div>
+</body>
+
+</html>

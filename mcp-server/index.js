@@ -46,7 +46,7 @@ try {
 async function authMiddleware(req, res, next) {
     // Helper to send 401 with correct discovery headers
     const send401 = (message) => {
-        const baseUrl = process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app';
+        const baseUrl = process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com';
         let metadataPath = '/.well-known/oauth-protected-resource';
         let realm = 'MemoryBank MCP';
 
@@ -101,14 +101,14 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
     if (resourceParam.includes('/dcr')) {
         console.log('DEBUG: Serving Legacy Auth Server for DCR resource:', resourceParam);
         return res.json({
-            resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+            resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
             authorization_servers: [LEGACY_AUTH_SERVER_URL],
             scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
         });
     }
 
     res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
         authorization_servers: [AUTH_SERVER_URL],
         scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
@@ -121,7 +121,7 @@ const LEGACY_AUTH_SERVER_URL = `${AUTH_SERVER_URL}/dcr`;
 // Metadata for /dcr base
 app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
     res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
         authorization_servers: [LEGACY_AUTH_SERVER_URL],
         scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
@@ -130,7 +130,7 @@ app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
 // Metadata for /dcr/mcp base (Crucial if client treats this as root)
 app.get('/dcr/mcp/.well-known/oauth-protected-resource', (req, res) => {
     res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://memorybank-mcp.up.railway.app',
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
         authorization_servers: [LEGACY_AUTH_SERVER_URL],
         scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
     });
