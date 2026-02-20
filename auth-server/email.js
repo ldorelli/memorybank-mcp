@@ -1,10 +1,9 @@
 import nodemailer from 'nodemailer';
 
 const AUTH_URL = process.env.ISSUER || process.env.AUTH_SERVER_URL || 'https://8bitmemory.com';
-const EMAIL_FROM = process.env.EMAIL_FROM || 'MemoryBank <noreply@8bitmemory.com>';
+const EMAIL_FROM = process.env.EMAIL_FROM || '8-Bit Memory <noreply@8bitmemory.com>';
 
 // Configure transporter
-// Supports both SMTP (nodemailer) and can be swapped to Resend SMTP later
 let transporter;
 
 if (process.env.SMTP_HOST) {
@@ -16,6 +15,9 @@ if (process.env.SMTP_HOST) {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS,
         },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
     });
 } else if (process.env.RESEND_API_KEY) {
     // Resend uses SMTP interface compatible with nodemailer
@@ -27,20 +29,23 @@ if (process.env.SMTP_HOST) {
             user: 'resend',
             pass: process.env.RESEND_API_KEY,
         },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
     });
+    console.log('📧 Email configured with Resend SMTP');
 } else {
-    console.warn('⚠️  No email config found (SMTP_HOST or RESEND_API_KEY). Email verification will fail.');
-    // Create a dummy transporter that logs instead of sending
+    console.warn('⚠️  No email config found (SMTP_HOST or RESEND_API_KEY). Emails will be logged only.');
     transporter = {
         sendMail: async (opts) => {
-            console.log('📧 [DEV MODE] Would send email:', JSON.stringify(opts, null, 2));
+            console.log('📧 [DEV MODE] Would send email to:', opts.to);
             return { messageId: 'dev-mode' };
         }
     };
 }
 
 /**
- * Send a verification email with a styled HTML template
+ * Send a verification email (fire-and-forget safe — catches all errors)
  */
 export async function sendVerificationEmail(email, token) {
     const verifyUrl = `${AUTH_URL}/verify?token=${token}`;
@@ -73,12 +78,19 @@ export async function sendVerificationEmail(email, token) {
 </html>`;
 
     try {
-        const result = await transporter.sendMail({
+        // Wrap in a timeout so we never block more than 15s
+        const sendPromise = transporter.sendMail({
             from: EMAIL_FROM,
             to: email,
             subject: '🧠 Verify your 8-Bit Memory account',
             html,
         });
+
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Email send timed out after 15s')), 15000)
+        );
+
+        const result = await Promise.race([sendPromise, timeoutPromise]);
         console.log(`📧 Verification email sent to ${email} (messageId: ${result.messageId})`);
         return true;
     } catch (err) {
