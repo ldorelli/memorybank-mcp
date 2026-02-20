@@ -20,6 +20,7 @@ const requestContext = new AsyncLocalStorage();
 dotenv.config({ path: join(__dirname, '../.env') });
 
 const app = express();
+app.set('trust proxy', true); // Required: Railway terminates SSL, forwards HTTP internally
 const { Pool } = pg;
 
 // Database Connection
