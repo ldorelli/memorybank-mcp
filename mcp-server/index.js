@@ -56,6 +56,9 @@ async function authMiddleware(req, res, next) {
         if (req.path.startsWith('/dcr')) {
             metadataPath = '/dcr/.well-known/oauth-protected-resource';
             realm = 'MemoryBank Legacy DCR';
+        } else if (req.path.startsWith('/basicauth')) {
+            metadataPath = '/basicauth/.well-known/oauth-protected-resource';
+            realm = 'MemoryBank BasicAuth';
         }
 
         const resourceMetadataUrl = `${baseUrl}${metadataPath}`;
@@ -946,6 +949,16 @@ app.get('/dcr', authMiddleware, handleMcpRequest);
 app.post('/dcr/mcp', authMiddleware, handleMcpRequest);
 app.get('/dcr/mcp', authMiddleware, handleMcpRequest);
 app.delete('/dcr/mcp', authMiddleware, handleMcpRequest);
+
+// ============ BASICAUTH ROUTES ============
+// Alias MCP handlers for /basicauth path
+app.post('/basicauth', authMiddleware, handleMcpRequest);
+app.get('/basicauth', authMiddleware, handleMcpRequest);
+
+// Explicitly handle /basicauth/mcp
+app.post('/basicauth/mcp', authMiddleware, handleMcpRequest);
+app.get('/basicauth/mcp', authMiddleware, handleMcpRequest);
+app.delete('/basicauth/mcp', authMiddleware, handleMcpRequest);
 
 
 // ============ STANDARD MCP ROUTES ============
