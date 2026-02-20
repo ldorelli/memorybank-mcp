@@ -23,49 +23,6 @@ const app = express();
 app.set('trust proxy', true); // Required: Railway terminates SSL, forwards HTTP internally
 app.set('strict routing', false);
 
-// Force HTTPS in production (Railway LB terminates SSL)
-if (process.env.NODE_ENV === 'production') {
-    app.use((req, res, next) => {
-        req.headers['x-forwarded-proto'] = 'https';
-        if (!req.connection.encrypted) {
-            req.connection.encrypted = true;
-        }
-        next();
-    });
-}
-
-// Global Debug Logger
-app.use((req, res, next) => {
-    console.log(`[DEBUG REQUEST] ${req.method} ${req.url} (path: ${req.path})`);
-    console.log(`[DEBUG HEADERS] Host: ${req.headers.host}, X-Forwarded-Proto: ${req.headers['x-forwarded-proto']}, X-Forwarded-For: ${req.headers['x-forwarded-for']}`);
-
-    // Direct bypass for .well-known to avoid any Express router 301 behavior
-    if (req.path === '/.well-known/oauth-protected-resource') {
-        const resourceParam = req.query.resource || '';
-        if (resourceParam.includes('/dcr')) {
-            return res.json({
-                resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-                authorization_servers: [`${process.env.AUTH_SERVER_URL || 'https://localhost:3000'}/dcr`],
-                scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-            });
-        }
-        return res.json({
-            resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-            authorization_servers: [process.env.AUTH_SERVER_URL || 'https://localhost:3000'],
-            scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-        });
-    }
-
-    // Intercept redirect to see who is doing it
-    const originalRedirect = res.redirect;
-    res.redirect = function (status, url) {
-        console.log(`[DEBUG REDIRECT] Intercepted redirect to: ${url} with status: ${status}`);
-        return originalRedirect.call(this, status, url);
-    };
-
-    next();
-});
-
 const { Pool } = pg;
 
 // Database Connection
@@ -861,7 +818,6 @@ app.use(express.json());
 
 // OAuth Protected Resource endpoint (RFC 9728) - Root
 app.get('/.well-known/oauth-protected-resource', (req, res) => {
-    console.log('[DEBUG HANDLER] Reached /.well-known/oauth-protected-resource');
     const resourceParam = req.query.resource || '';
     if (resourceParam.includes('/dcr')) {
         return res.json({
@@ -877,14 +833,6 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
     });
 });
 
-app.get('/test-auth-meta', (req, res) => {
-    console.log('[DEBUG HANDLER] Reached /test-auth-meta');
-    res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-        authorization_servers: [AUTH_SERVER_URL],
-        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-    });
-});
 
 // Legacy DCR metadata endpoints
 app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
