@@ -597,7 +597,7 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
             return res.render('login', {
                 uid, client: {}, details: {}, params: {},
                 title: 'Sign-in',
-                flash: 'Please verify your email first. Check your inbox for the verification link.'
+                flash: 'Please verify your email first. <a href="/resend-verification?email=' + encodeURIComponent(email) + '">Resend verification email</a>'
             });
         }
 
@@ -621,6 +621,50 @@ app.post('/interaction/:uid/login', async (req, res, next) => {
         await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: false });
     } catch (err) {
         next(err);
+    }
+});
+
+// Resend Verification Email
+app.get('/resend-verification', async (req, res) => {
+    const { email } = req.query;
+
+    if (!email) {
+        return res.render('verify_pending', { email: 'unknown' });
+    }
+
+    try {
+        const userRes = await pool.query(
+            'SELECT id, email_verified FROM users WHERE email = $1',
+            [email]
+        );
+
+        if (userRes.rows.length === 0) {
+            // Don't reveal whether user exists
+            return res.render('verify_pending', { email });
+        }
+
+        const user = userRes.rows[0];
+
+        if (user.email_verified) {
+            return res.render('verify_success', { error: 'This email is already verified. You can log in.' });
+        }
+
+        // Generate new token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        await pool.query(
+            'UPDATE users SET verification_token = $1, verification_expires = $2 WHERE id = $3',
+            [token, expires, user.id]
+        );
+
+        await sendVerificationEmail(email, token);
+        console.log(`📧 Resent verification email to ${email}`);
+
+        res.render('verify_pending', { email });
+    } catch (err) {
+        console.error('Resend verification error:', err);
+        res.render('verify_pending', { email });
     }
 });
 
