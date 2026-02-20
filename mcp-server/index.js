@@ -94,8 +94,22 @@ async function authMiddleware(req, res, next) {
 
 const AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'https://localhost:3000';
 
+// Debug: Log all requests to trace 301 redirects
+app.use((req, res, next) => {
+    if (req.path.includes('.well-known')) {
+        console.log(`🔍 DEBUG: ${req.method} ${req.path} (originalUrl: ${req.originalUrl}, protocol: ${req.protocol})`);
+    }
+    next();
+});
+
+// Debug test route
+app.get('/well-known-test', (req, res) => {
+    res.json({ test: 'ok', path: req.path, originalUrl: req.originalUrl });
+});
+
 // OAuth Protected Resource endpoint (RFC 9728) - Root
 app.get('/.well-known/oauth-protected-resource', (req, res) => {
+    console.log('🔍 DEBUG: HIT .well-known/oauth-protected-resource handler!');
     const resourceParam = req.query.resource || '';
     // If the client is asking about the DCR endpoint, point them to the DCR Auth Server
     if (resourceParam.includes('/dcr')) {
