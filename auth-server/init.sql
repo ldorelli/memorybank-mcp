@@ -22,3 +22,15 @@ CREATE TABLE IF NOT EXISTS notes (
   content TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- User Tables (Structured data storage)
+CREATE TABLE IF NOT EXISTS user_tables (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id),
+  name VARCHAR(255) NOT NULL,
+  schema JSONB NOT NULL,
+  data TEXT NOT NULL DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, name)
+);
