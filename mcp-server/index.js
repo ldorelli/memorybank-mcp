@@ -123,9 +123,10 @@ const server = new McpServer({
 // Tool: Save a new memory
 server.tool(
     "save_memory",
+    "Store a new memory, fact, preference, or note about the user. Use this tool proactively to remember important details the user shares so you can recall them later. Memories are stored securely and privately.",
     {
-        content: z.string().describe("The content of the memory to save"),
-        tags: z.array(z.string()).optional().describe("Optional tags for organizing memories")
+        content: z.string().describe("The detailed content of the memory or fact to save"),
+        tags: z.array(z.string()).optional().describe("Optional conceptual tags for organizing and finding this memory easily later")
     },
     async ({ content, tags }) => {
         try {
@@ -175,8 +176,9 @@ server.tool(
 // Tool: List all memories
 server.tool(
     "list_memories",
+    "Retrieve a chronologically ordered list of the user's most recent memories. Use this to get context about the user or when they ask what you remember about them.",
     {
-        limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
+        limit: z.number().optional().describe("Maximum number of recent memories to return (default: 10, max: 50)")
     },
     async ({ limit = 10 }) => {
         try {
@@ -228,8 +230,9 @@ server.tool(
 // Tool: Search memories
 server.tool(
     "search_memories",
+    "Search through all of the user's stored memories using a keyword or phrase. Use this tool when you need to recall specific facts, preferences, or past conversations about a certain topic.",
     {
-        query: z.string().describe("Search query to find memories")
+        query: z.string().describe("The specific keyword, phrase, or topic to search for within the user's memories")
     },
     async ({ query }) => {
         try {
@@ -289,8 +292,9 @@ server.tool(
 // Tool: Delete a memory
 server.tool(
     "delete_memory",
+    "Permanently remove a memory by its ID. Use this ONLY when the user explicitly asks to forget something or delete a specific fact they no longer want stored.",
     {
-        id: z.string().describe("The ID of the memory to delete")
+        id: z.string().describe("The exact ID of the memory to delete, as provided by list_memories or search_memories")
     },
     async ({ id }) => {
         try {
@@ -377,14 +381,15 @@ function applyDefaults(schema, row) {
 // Tool: Create a new table
 server.tool(
     "create_table",
+    "Create a new structured table for the user to manage lists, to-dos, expenses, habits, or any ongoing tracking. Use this when the user needs to store multi-column, structured data instead of freeform text.",
     {
-        name: z.string().describe("Name of the table to create"),
+        name: z.string().describe("The name of the new table (e.g. 'reading_list', 'expenses')"),
         schema: z.array(z.object({
-            name: z.string().describe("Column name"),
-            type: z.enum(["string", "number", "boolean"]).describe("Column data type"),
-            required: z.boolean().optional().describe("Whether this column is required (default: false)"),
-            default: z.any().optional().describe("Default value for this column")
-        })).describe("Array of column definitions")
+            name: z.string().describe("Column name (lowercase with underscores)"),
+            type: z.enum(["string", "number", "boolean"]).describe("Data type: string, number, or boolean"),
+            required: z.boolean().optional().describe("Whether this column must always have a value (default: false)"),
+            default: z.any().optional().describe("The default value if none is provided during insertion")
+        })).describe("The schema array defining the columns of the table")
     },
     async ({ name, schema }) => {
         try {
@@ -437,6 +442,7 @@ server.tool(
 // Tool: List all tables
 server.tool(
     "list_tables",
+    "Retrieve a list of all custom structured data tables created by the user, including their schemas (column names and types). Use this to see what structure exists before querying or modifying tabular data.",
     {},
     async () => {
         try {
@@ -479,8 +485,9 @@ server.tool(
 // Tool: Get table data
 server.tool(
     "get_table",
+    "Fetch all rows inside a specific structured data table. Use this to read the user's lists, trackers, or structured datasets.",
     {
-        name: z.string().describe("Name of the table to retrieve")
+        name: z.string().describe("The exact name of the table to retrieve data from")
     },
     async ({ name }) => {
         try {
@@ -538,9 +545,10 @@ server.tool(
 // Tool: Add a row to a table
 server.tool(
     "add_row",
+    "Insert a new structured record (row) into an existing user table. Use this for adding items to trackers, to-do lists, daily logs, etc.",
     {
-        name: z.string().describe("Name of the table to add a row to"),
-        row: z.record(z.any()).describe("Object with column values, e.g. {\"task\": \"Buy milk\", \"priority\": 1}")
+        name: z.string().describe("The exact name of the target table"),
+        row: z.record(z.any()).describe("A JSON object representing the row data. Keys must match column names. Example: {\"task\": \"Buy milk\", \"priority\": 1}")
     },
     async ({ name, row }) => {
         try {
@@ -605,10 +613,11 @@ server.tool(
 // Tool: Update a row in a table
 server.tool(
     "update_row",
+    "Modify existing cells inside a specific row of a table. Use this to mark tasks as complete, update prices, change status flags, etc.",
     {
-        name: z.string().describe("Name of the table"),
-        row_id: z.number().describe("The _row_id of the row to update"),
-        updates: z.record(z.any()).describe("Object with fields to update, e.g. {\"status\": \"done\"}")
+        name: z.string().describe("The exact name of the target table"),
+        row_id: z.number().describe("The internal `_row_id` of the row to update (you must fetch the table first to find this ID)"),
+        updates: z.record(z.any()).describe("A JSON object containing ONLY the specific fields to update. Example: {\"status\": \"done\"}")
     },
     async ({ name, row_id, updates }) => {
         try {
@@ -690,9 +699,10 @@ server.tool(
 // Tool: Delete a row from a table
 server.tool(
     "delete_row",
+    "Permanently remove a specific row from a user's structured table using its `_row_id`. Use this only when requested by the user.",
     {
-        name: z.string().describe("Name of the table"),
-        row_id: z.number().describe("The _row_id of the row to delete")
+        name: z.string().describe("The exact name of the target table"),
+        row_id: z.number().describe("The internal `_row_id` of the row to delete")
     },
     async ({ name, row_id }) => {
         try {
@@ -745,11 +755,12 @@ server.tool(
 // Tool: Add a column to a table
 server.tool(
     "add_column",
+    "Schema migration explicitly modifying an existing table by appending a brand new column. Existing rows will be backfilled with the provided default value.",
     {
-        name: z.string().describe("Name of the table"),
-        column_name: z.string().describe("Name of the new column"),
-        type: z.enum(["string", "number", "boolean"]).describe("Data type of the new column"),
-        default_value: z.any().describe("Default value to backfill existing rows with")
+        name: z.string().describe("The exact name of the target table"),
+        column_name: z.string().describe("The new column name (lowercase with underscores)"),
+        type: z.enum(["string", "number", "boolean"]).describe("The core data type of the new column"),
+        default_value: z.any().describe("The mandatory default value to assign to all existing rows historically in the table")
     },
     async ({ name, column_name, type, default_value }) => {
         try {
