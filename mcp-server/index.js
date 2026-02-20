@@ -831,6 +831,14 @@ app.get('/.well-known/oauth-protected-resource', (req, res) => {
     });
 });
 
+app.get('/test-auth-meta', (req, res) => {
+    res.json({
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+        authorization_servers: [AUTH_SERVER_URL],
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+    });
+});
+
 // Legacy DCR metadata endpoints
 app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
     res.json({
