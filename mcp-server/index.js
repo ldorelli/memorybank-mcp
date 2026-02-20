@@ -895,8 +895,8 @@ async function handleMcpRequest(req, res) {
     if (sessionId && transports.has(sessionId)) {
         // Reuse existing transport
         transport = transports.get(sessionId);
-    } else if (!sessionId && req.method === 'POST') {
-        // New session - create transport
+    } else if (!sessionId) {
+        // New session - create transport (supports both GET for SSE and POST for standalone JSON)
         transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
         });
@@ -914,7 +914,7 @@ async function handleMcpRequest(req, res) {
 
         // After first request, we'll have a session ID
         // We'll store it after handling the request
-    } else if (sessionId && !transports.has(sessionId)) {
+    } else {
         // Invalid session
         return res.status(404).json({
             jsonrpc: '2.0',
