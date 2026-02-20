@@ -93,78 +93,7 @@ async function authMiddleware(req, res, next) {
 }
 
 const AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'https://localhost:3000';
-
-// Debug: Log all requests to trace 301 redirects
-app.use((req, res, next) => {
-    if (req.path.includes('.well-known')) {
-        console.log(`🔍 DEBUG: ${req.method} ${req.path} (originalUrl: ${req.originalUrl}, protocol: ${req.protocol})`);
-    }
-    next();
-});
-
-// Debug test route
-app.get('/well-known-test', (req, res) => {
-    res.json({ test: 'ok', path: req.path, originalUrl: req.originalUrl });
-});
-
-// OAuth Protected Resource endpoint (RFC 9728) - Root
-app.get('/.well-known/oauth-protected-resource', (req, res) => {
-    console.log('🔍 DEBUG: HIT .well-known/oauth-protected-resource handler!');
-    const resourceParam = req.query.resource || '';
-    // If the client is asking about the DCR endpoint, point them to the DCR Auth Server
-    if (resourceParam.includes('/dcr')) {
-        console.log('DEBUG: Serving Legacy Auth Server for DCR resource:', resourceParam);
-        return res.json({
-            resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-            authorization_servers: [LEGACY_AUTH_SERVER_URL],
-            scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-        });
-    }
-
-    res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-        authorization_servers: [AUTH_SERVER_URL],
-        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-    });
-});
-
-// ============ LEGACY DCR ROUTES (Testing) ============
-// These endpoints point to the "Legacy" Auth Provider (no metadata support)
 const LEGACY_AUTH_SERVER_URL = `${AUTH_SERVER_URL}/dcr`;
-
-// Metadata for /dcr base
-app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
-    res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-        authorization_servers: [LEGACY_AUTH_SERVER_URL],
-        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-    });
-});
-
-// Metadata for /dcr/mcp base (Crucial if client treats this as root)
-app.get('/dcr/mcp/.well-known/oauth-protected-resource', (req, res) => {
-    res.json({
-        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
-        authorization_servers: [LEGACY_AUTH_SERVER_URL],
-        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
-    });
-});
-
-// OpenAI Domain Verification Endpoint
-app.get('/.well-known/openai-app-domain-verification', (req, res) => {
-    // Return exact token as plain text
-    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
-});
-
-// Alias for Legacy DCR check if they check that domain too (optional but safe)
-app.get('/dcr/.well-known/openai-app-domain-verification', (req, res) => {
-    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
-});
-
-// User requested 'openai-apps-challenge' path (Alternate verification)
-app.get('/.well-known/openai-apps-challenge', (req, res) => {
-    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
-});
 
 import { encrypt, decrypt } from './utils/crypto.js';
 
@@ -877,6 +806,57 @@ server.tool(
 
 app.use(cors());
 app.use(express.json());
+
+// ========================
+// Discovery & Metadata Routes
+// IMPORTANT: These MUST be after app.use(cors/json) — routes before middleware
+// get 301 redirects due to MCP SDK tool registration affecting the Express route stack.
+// ========================
+
+// OAuth Protected Resource endpoint (RFC 9728) - Root
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
+    const resourceParam = req.query.resource || '';
+    if (resourceParam.includes('/dcr')) {
+        return res.json({
+            resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+            authorization_servers: [LEGACY_AUTH_SERVER_URL],
+            scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+        });
+    }
+    res.json({
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+        authorization_servers: [AUTH_SERVER_URL],
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+    });
+});
+
+// Legacy DCR metadata endpoints
+app.get('/dcr/.well-known/oauth-protected-resource', (req, res) => {
+    res.json({
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+        authorization_servers: [LEGACY_AUTH_SERVER_URL],
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+    });
+});
+
+app.get('/dcr/mcp/.well-known/oauth-protected-resource', (req, res) => {
+    res.json({
+        resource: process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
+        authorization_servers: [LEGACY_AUTH_SERVER_URL],
+        scopes_supported: ["openid", "profile", "email", "offline_access", "memories:read", "memories:write"]
+    });
+});
+
+// OpenAI Domain Verification
+app.get('/.well-known/openai-app-domain-verification', (req, res) => {
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
+});
+app.get('/dcr/.well-known/openai-app-domain-verification', (req, res) => {
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
+});
+app.get('/.well-known/openai-apps-challenge', (req, res) => {
+    res.type('text/plain').send('9VWnNzE6C_PBsAtelBomF88tKEoSv0lGu_wYDNZ5X04');
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
