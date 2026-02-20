@@ -103,712 +103,719 @@ const LEGACY_AUTH_SERVER_URL = `${AUTH_SERVER_URL}/dcr`;
 
 import { encrypt, decrypt } from './utils/crypto.js';
 
-// MCP Server Initialization with proper metadata
-const server = new McpServer({
-    name: "memorybank",
-    version: "1.0.0",
-    title: "MemoryBank MCP Server",
-    description: "A personal memory and notes management server. Store, retrieve, and search through your thoughts and memories with AI assistance."
-}, {
-    capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {}
-    },
-    instructions: "MemoryBank helps you save and retrieve personal memories and notes. Use the 'save_memory' tool to store new memories, 'list_memories' to see your saved memories, and 'search_memories' to find specific ones."
-});
+// Server instance creation factory
+// In MCP SDK, a Server instance connects 1-to-1 with a Transport.
+// For Web/HTTP Transports where multiple clients can connect simultaneously,
+// we MUST create a new McpServer and Transport pair per session.
+function createMcpServer() {
+    const server = new McpServer({
+        name: "memorybank",
+        version: "1.0.0",
+        title: "MemoryBank MCP Server",
+        description: "A personal memory and notes management server. Store, retrieve, and search through your thoughts and memories with AI assistance."
+    }, {
+        capabilities: {
+            tools: {},
+            resources: {},
+            prompts: {}
+        },
+        instructions: "MemoryBank helps you save and retrieve personal memories and notes. Use the 'save_memory' tool to store new memories, 'list_memories' to see your saved memories, and 'search_memories' to find specific ones."
+    });
 
-// ============ TOOLS ============
+    // ============ TOOLS ============
 
-// Tool: Save a new memory
-server.tool(
-    "save_memory",
-    {
-        content: z.string().describe("The content of the memory to save"),
-        tags: z.array(z.string()).optional().describe("Optional tags for organizing memories")
-    },
-    async ({ content, tags }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
-            }
+    // Tool: Save a new memory
+    server.tool(
+        "save_memory",
+        {
+            content: z.string().describe("The content of the memory to save"),
+            tags: z.array(z.string()).optional().describe("Optional tags for organizing memories")
+        },
+        async ({ content, tags }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
+                }
 
-            // Verify Scope
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
+                // Verify Scope
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
 
-            const userId = user.sub; // The UUID from the Auth Server
+                const userId = user.sub; // The UUID from the Auth Server
 
-            // Encrypt content before storage
-            const encryptedContent = encrypt(content);
+                // Encrypt content before storage
+                const encryptedContent = encrypt(content);
 
-            const res = await pool.query(
-                "INSERT INTO notes (user_id, content) VALUES ($1, $2) RETURNING id, created_at",
-                [userId, encryptedContent]
-            );
+                const res = await pool.query(
+                    "INSERT INTO notes (user_id, content) VALUES ($1, $2) RETURNING id, created_at",
+                    [userId, encryptedContent]
+                );
 
-            const result = {
-                id: res.rows[0].id,
-                created_at: res.rows[0].created_at,
-                tags: tags || []
-            };
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `✅ Memory saved successfully!\n\nID: ${result.id}\nCreated: ${result.created_at}\n${tags ? `Tags: ${tags.join(', ')}` : ''}`
-                }]
-            };
-        } catch (err) {
-            console.error("Error saving memory:", err);
-            return {
-                content: [{ type: "text", text: `Error saving memory: ${err.message}` }],
-                isError: true
-            };
-        }
-    }
-);
-
-// Tool: List all memories
-server.tool(
-    "list_memories",
-    {
-        limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
-    },
-    async ({ limit = 10 }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
-            }
-
-            // Verify Scope
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:read')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-                [userId, limit]
-            );
-
-            if (res.rows.length === 0) {
-                return {
-                    content: [{ type: "text", text: "📭 No memories found. Use 'save_memory' to create your first one!" }]
+                const result = {
+                    id: res.rows[0].id,
+                    created_at: res.rows[0].created_at,
+                    tags: tags || []
                 };
-            }
 
-            const memoriesList = res.rows.map((row, i) => {
-                const decryptedContent = decrypt(row.content);
-                return `${i + 1}. [${row.id}] ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`;
-            }).join('\n\n');
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `📚 Your Recent Memories (${res.rows.length}):\n\n${memoriesList}`
-                }]
-            };
-        } catch (err) {
-            console.error("Error listing memories:", err);
-            return {
-                content: [{ type: "text", text: `Error listing memories: ${err.message}` }],
-                isError: true
-            };
-        }
-    }
-);
-
-// Tool: Search memories
-server.tool(
-    "search_memories",
-    {
-        query: z.string().describe("Search query to find memories")
-    },
-    async ({ query }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:read')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            // Fetch ALL notes for user (cannot use SQL LIKE on encrypted data)
-            const res = await pool.query(
-                "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC",
-                [userId]
-            );
-
-            // Decrypt and filter in memory
-            const matches = res.rows
-                .map(row => ({
-                    ...row,
-                    content: decrypt(row.content)
-                }))
-                .filter(row => row.content.toLowerCase().includes(query.toLowerCase()))
-                .slice(0, 20); // Limit to top 20 matches
-
-            if (matches.length === 0) {
                 return {
-                    content: [{ type: "text", text: `🔍 No memories found matching "${query}"` }]
+                    content: [{
+                        type: "text",
+                        text: `✅ Memory saved successfully!\n\nID: ${result.id}\nCreated: ${result.created_at}\n${tags ? `Tags: ${tags.join(', ')}` : ''}`
+                    }]
                 };
-            }
-
-            const resultsList = matches.map((row, i) =>
-                `${i + 1}. [${row.id}] ${row.content.substring(0, 100)}${row.content.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`
-            ).join('\n\n');
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `🔍 Found ${matches.length} memories matching "${query}":\n\n${resultsList}`
-                }]
-            };
-        } catch (err) {
-            console.error("Error searching memories:", err);
-            return {
-                content: [{ type: "text", text: `Error searching memories: ${err.message}` }],
-                isError: true
-            };
-        }
-    }
-);
-
-// Tool: Delete a memory
-server.tool(
-    "delete_memory",
-    {
-        id: z.string().describe("The ID of the memory to delete")
-    },
-    async ({ id }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "DELETE FROM notes WHERE id = $1 AND user_id = $2 RETURNING id",
-                [id, userId]
-            );
-
-            if (res.rows.length === 0) {
+            } catch (err) {
+                console.error("Error saving memory:", err);
                 return {
-                    content: [{ type: "text", text: `❌ Memory with ID ${id} not found or already deleted.` }],
+                    content: [{ type: "text", text: `Error saving memory: ${err.message}` }],
                     isError: true
                 };
             }
-
-            return {
-                content: [{ type: "text", text: `🗑️ Memory ${id} deleted successfully.` }]
-            };
-        } catch (err) {
-            console.error("Error deleting memory:", err);
-            return {
-                content: [{ type: "text", text: `Error deleting memory: ${err.message}` }],
-                isError: true
-            };
         }
-    }
-);
+    );
 
-// ============ TABLE TOOLS ============
-
-// Helper: Validate a row against a table schema
-function validateRow(schema, row) {
-    const errors = [];
-    for (const col of schema) {
-        const val = row[col.name];
-        if (val === undefined || val === null) {
-            if (col.required) {
-                errors.push(`Missing required field: "${col.name}"`);
-            }
-            continue;
-        }
-        // Type check
-        if (col.type === 'number' && typeof val !== 'number') {
-            errors.push(`"${col.name}" must be a number, got ${typeof val}`);
-        } else if (col.type === 'string' && typeof val !== 'string') {
-            errors.push(`"${col.name}" must be a string, got ${typeof val}`);
-        } else if (col.type === 'boolean' && typeof val !== 'boolean') {
-            errors.push(`"${col.name}" must be a boolean, got ${typeof val}`);
-        }
-    }
-    // Check for unknown columns
-    const knownCols = new Set(schema.map(c => c.name));
-    for (const key of Object.keys(row)) {
-        if (!knownCols.has(key)) {
-            errors.push(`Unknown column: "${key}"`);
-        }
-    }
-    return errors;
-}
-
-// Helper: Apply defaults from schema to a row
-function applyDefaults(schema, row) {
-    const result = { ...row };
-    for (const col of schema) {
-        if ((result[col.name] === undefined || result[col.name] === null) && col.default !== undefined) {
-            result[col.name] = col.default;
-        }
-    }
-    return result;
-}
-
-// Tool: Create a new table
-server.tool(
-    "create_table",
-    {
-        name: z.string().describe("Name of the table to create"),
-        schema: z.array(z.object({
-            name: z.string().describe("Column name"),
-            type: z.enum(["string", "number", "boolean"]).describe("Column data type"),
-            required: z.boolean().optional().describe("Whether this column is required (default: false)"),
-            default: z.any().optional().describe("Default value for this column")
-        })).describe("Array of column definitions")
-    },
-    async ({ name, schema }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            // Check for duplicate column names
-            const colNames = schema.map(c => c.name);
-            const dupes = colNames.filter((n, i) => colNames.indexOf(n) !== i);
-            if (dupes.length > 0) {
-                return { content: [{ type: "text", text: `Error: Duplicate column names: ${dupes.join(', ')}` }], isError: true };
-            }
-
-            const encryptedData = encrypt('[]');
-
-            await pool.query(
-                "INSERT INTO user_tables (user_id, name, schema, data) VALUES ($1, $2, $3, $4)",
-                [userId, name, JSON.stringify(schema), encryptedData]
-            );
-
-            const colSummary = schema.map(c =>
-                `  - ${c.name} (${c.type})${c.required ? ' [required]' : ''}${c.default !== undefined ? ` [default: ${c.default}]` : ''}`
-            ).join('\n');
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `📊 Table "${name}" created!\n\nColumns:\n${colSummary}`
-                }]
-            };
-        } catch (err) {
-            if (err.code === '23505') { // unique_violation
-                return { content: [{ type: "text", text: `Error: Table "${name}" already exists.` }], isError: true };
-            }
-            console.error("Error creating table:", err);
-            return { content: [{ type: "text", text: `Error creating table: ${err.message}` }], isError: true };
-        }
-    }
-);
-
-// Tool: List all tables
-server.tool(
-    "list_tables",
-    {},
-    async () => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:read')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT name, schema, created_at, updated_at FROM user_tables WHERE user_id = $1 ORDER BY name",
-                [userId]
-            );
-
-            if (res.rows.length === 0) {
-                return { content: [{ type: "text", text: "📭 No tables found. Use 'create_table' to create one!" }] };
-            }
-
-            const list = res.rows.map((t, i) => {
-                const cols = t.schema.map(c => `${c.name}:${c.type}`).join(', ');
-                return `${i + 1}. **${t.name}** (${cols})\n   📅 Created: ${t.created_at}`;
-            }).join('\n\n');
-
-            return {
-                content: [{ type: "text", text: `📊 Your Tables (${res.rows.length}):\n\n${list}` }]
-            };
-        } catch (err) {
-            console.error("Error listing tables:", err);
-            return { content: [{ type: "text", text: `Error listing tables: ${err.message}` }], isError: true };
-        }
-    }
-);
-
-// Tool: Get table data
-server.tool(
-    "get_table",
-    {
-        name: z.string().describe("Name of the table to retrieve")
-    },
-    async ({ name }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:read')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
-                [userId, name]
-            );
-
-            if (res.rows.length === 0) {
-                return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
-            }
-
-            const table = res.rows[0];
-            const decryptedData = JSON.parse(decrypt(table.data));
-
-            if (decryptedData.length === 0) {
-                const cols = table.schema.map(c => c.name).join(' | ');
-                return { content: [{ type: "text", text: `📊 Table "${name}" (empty)\n\nColumns: ${cols}\n\nUse 'add_row' to add data.` }] };
-            }
-
-            // Format as a text table
-            const cols = table.schema.map(c => c.name);
-            const header = `_row_id | ${cols.join(' | ')}`;
-            const separator = '-'.repeat(header.length);
-            const rows = decryptedData.map(row => {
-                const vals = cols.map(c => String(row[c] ?? ''));
-                return `${row._row_id} | ${vals.join(' | ')}`;
-            });
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `📊 Table "${name}" (${decryptedData.length} rows):\n\n${header}\n${separator}\n${rows.join('\n')}`
-                }]
-            };
-        } catch (err) {
-            console.error("Error getting table:", err);
-            return { content: [{ type: "text", text: `Error getting table: ${err.message}` }], isError: true };
-        }
-    }
-);
-
-// Tool: Add a row to a table
-server.tool(
-    "add_row",
-    {
-        name: z.string().describe("Name of the table to add a row to"),
-        row: z.record(z.any()).describe("Object with column values, e.g. {\"task\": \"Buy milk\", \"priority\": 1}")
-    },
-    async ({ name, row }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT id, schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
-                [userId, name]
-            );
-
-            if (res.rows.length === 0) {
-                return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
-            }
-
-            const table = res.rows[0];
-            const tableSchema = table.schema;
-            const data = JSON.parse(decrypt(table.data));
-
-            // Apply defaults and validate
-            const fullRow = applyDefaults(tableSchema, row);
-            const errors = validateRow(tableSchema, fullRow);
-            if (errors.length > 0) {
-                return { content: [{ type: "text", text: `❌ Validation errors:\n${errors.map(e => `  - ${e}`).join('\n')}` }], isError: true };
-            }
-
-            // Auto-increment _row_id
-            const maxId = data.reduce((max, r) => Math.max(max, r._row_id || 0), 0);
-            fullRow._row_id = maxId + 1;
-
-            data.push(fullRow);
-
-            const encryptedData = encrypt(JSON.stringify(data));
-
-            await pool.query(
-                "UPDATE user_tables SET data = $1, updated_at = NOW() WHERE id = $2",
-                [encryptedData, table.id]
-            );
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `✅ Row added to "${name}" (row_id: ${fullRow._row_id})\n\n${JSON.stringify(fullRow, null, 2)}`
-                }]
-            };
-        } catch (err) {
-            console.error("Error adding row:", err);
-            return { content: [{ type: "text", text: `Error adding row: ${err.message}` }], isError: true };
-        }
-    }
-);
-
-// Tool: Update a row in a table
-server.tool(
-    "update_row",
-    {
-        name: z.string().describe("Name of the table"),
-        row_id: z.number().describe("The _row_id of the row to update"),
-        updates: z.record(z.any()).describe("Object with fields to update, e.g. {\"status\": \"done\"}")
-    },
-    async ({ name, row_id, updates }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
-            }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT id, schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
-                [userId, name]
-            );
-
-            if (res.rows.length === 0) {
-                return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
-            }
-
-            const table = res.rows[0];
-            const data = JSON.parse(decrypt(table.data));
-
-            const rowIndex = data.findIndex(r => r._row_id === row_id);
-            if (rowIndex === -1) {
-                return { content: [{ type: "text", text: `❌ Row ${row_id} not found in "${name}".` }], isError: true };
-            }
-
-            // Validate update fields against schema
-            const knownCols = new Set(table.schema.map(c => c.name));
-            for (const key of Object.keys(updates)) {
-                if (!knownCols.has(key)) {
-                    return { content: [{ type: "text", text: `❌ Unknown column: "${key}"` }], isError: true };
+    // Tool: List all memories
+    server.tool(
+        "list_memories",
+        {
+            limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
+        },
+        async ({ limit = 10 }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
                 }
-            }
 
-            // Type check updates
-            for (const col of table.schema) {
-                if (updates[col.name] !== undefined) {
-                    const val = updates[col.name];
-                    if (col.type === 'number' && typeof val !== 'number') {
-                        return { content: [{ type: "text", text: `❌ "${col.name}" must be a number` }], isError: true };
-                    }
-                    if (col.type === 'string' && typeof val !== 'string') {
-                        return { content: [{ type: "text", text: `❌ "${col.name}" must be a string` }], isError: true };
-                    }
-                    if (col.type === 'boolean' && typeof val !== 'boolean') {
-                        return { content: [{ type: "text", text: `❌ "${col.name}" must be a boolean` }], isError: true };
+                // Verify Scope
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:read')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+                    [userId, limit]
+                );
+
+                if (res.rows.length === 0) {
+                    return {
+                        content: [{ type: "text", text: "📭 No memories found. Use 'save_memory' to create your first one!" }]
+                    };
+                }
+
+                const memoriesList = res.rows.map((row, i) => {
+                    const decryptedContent = decrypt(row.content);
+                    return `${i + 1}. [${row.id}] ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`;
+                }).join('\n\n');
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `📚 Your Recent Memories (${res.rows.length}):\n\n${memoriesList}`
+                    }]
+                };
+            } catch (err) {
+                console.error("Error listing memories:", err);
+                return {
+                    content: [{ type: "text", text: `Error listing memories: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
+    // Tool: Search memories
+    server.tool(
+        "search_memories",
+        {
+            query: z.string().describe("Search query to find memories")
+        },
+        async ({ query }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:read')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                // Fetch ALL notes for user (cannot use SQL LIKE on encrypted data)
+                const res = await pool.query(
+                    "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC",
+                    [userId]
+                );
+
+                // Decrypt and filter in memory
+                const matches = res.rows
+                    .map(row => ({
+                        ...row,
+                        content: decrypt(row.content)
+                    }))
+                    .filter(row => row.content.toLowerCase().includes(query.toLowerCase()))
+                    .slice(0, 20); // Limit to top 20 matches
+
+                if (matches.length === 0) {
+                    return {
+                        content: [{ type: "text", text: `🔍 No memories found matching "${query}"` }]
+                    };
+                }
+
+                const resultsList = matches.map((row, i) =>
+                    `${i + 1}. [${row.id}] ${row.content.substring(0, 100)}${row.content.length > 100 ? '...' : ''}\n   📅 ${row.created_at}`
+                ).join('\n\n');
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `🔍 Found ${matches.length} memories matching "${query}":\n\n${resultsList}`
+                    }]
+                };
+            } catch (err) {
+                console.error("Error searching memories:", err);
+                return {
+                    content: [{ type: "text", text: `Error searching memories: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
+    // Tool: Delete a memory
+    server.tool(
+        "delete_memory",
+        {
+            id: z.string().describe("The ID of the memory to delete")
+        },
+        async ({ id }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "DELETE FROM notes WHERE id = $1 AND user_id = $2 RETURNING id",
+                    [id, userId]
+                );
+
+                if (res.rows.length === 0) {
+                    return {
+                        content: [{ type: "text", text: `❌ Memory with ID ${id} not found or already deleted.` }],
+                        isError: true
+                    };
+                }
+
+                return {
+                    content: [{ type: "text", text: `🗑️ Memory ${id} deleted successfully.` }]
+                };
+            } catch (err) {
+                console.error("Error deleting memory:", err);
+                return {
+                    content: [{ type: "text", text: `Error deleting memory: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
+    // ============ TABLE TOOLS ============
+
+    // Helper: Validate a row against a table schema
+    function validateRow(schema, row) {
+        const errors = [];
+        for (const col of schema) {
+            const val = row[col.name];
+            if (val === undefined || val === null) {
+                if (col.required) {
+                    errors.push(`Missing required field: "${col.name}"`);
+                }
+                continue;
+            }
+            // Type check
+            if (col.type === 'number' && typeof val !== 'number') {
+                errors.push(`"${col.name}" must be a number, got ${typeof val}`);
+            } else if (col.type === 'string' && typeof val !== 'string') {
+                errors.push(`"${col.name}" must be a string, got ${typeof val}`);
+            } else if (col.type === 'boolean' && typeof val !== 'boolean') {
+                errors.push(`"${col.name}" must be a boolean, got ${typeof val}`);
+            }
+        }
+        // Check for unknown columns
+        const knownCols = new Set(schema.map(c => c.name));
+        for (const key of Object.keys(row)) {
+            if (!knownCols.has(key)) {
+                errors.push(`Unknown column: "${key}"`);
+            }
+        }
+        return errors;
+    }
+
+    // Helper: Apply defaults from schema to a row
+    function applyDefaults(schema, row) {
+        const result = { ...row };
+        for (const col of schema) {
+            if ((result[col.name] === undefined || result[col.name] === null) && col.default !== undefined) {
+                result[col.name] = col.default;
+            }
+        }
+        return result;
+    }
+
+    // Tool: Create a new table
+    server.tool(
+        "create_table",
+        {
+            name: z.string().describe("Name of the table to create"),
+            schema: z.array(z.object({
+                name: z.string().describe("Column name"),
+                type: z.enum(["string", "number", "boolean"]).describe("Column data type"),
+                required: z.boolean().optional().describe("Whether this column is required (default: false)"),
+                default: z.any().optional().describe("Default value for this column")
+            })).describe("Array of column definitions")
+        },
+        async ({ name, schema }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                // Check for duplicate column names
+                const colNames = schema.map(c => c.name);
+                const dupes = colNames.filter((n, i) => colNames.indexOf(n) !== i);
+                if (dupes.length > 0) {
+                    return { content: [{ type: "text", text: `Error: Duplicate column names: ${dupes.join(', ')}` }], isError: true };
+                }
+
+                const encryptedData = encrypt('[]');
+
+                await pool.query(
+                    "INSERT INTO user_tables (user_id, name, schema, data) VALUES ($1, $2, $3, $4)",
+                    [userId, name, JSON.stringify(schema), encryptedData]
+                );
+
+                const colSummary = schema.map(c =>
+                    `  - ${c.name} (${c.type})${c.required ? ' [required]' : ''}${c.default !== undefined ? ` [default: ${c.default}]` : ''}`
+                ).join('\n');
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `📊 Table "${name}" created!\n\nColumns:\n${colSummary}`
+                    }]
+                };
+            } catch (err) {
+                if (err.code === '23505') { // unique_violation
+                    return { content: [{ type: "text", text: `Error: Table "${name}" already exists.` }], isError: true };
+                }
+                console.error("Error creating table:", err);
+                return { content: [{ type: "text", text: `Error creating table: ${err.message}` }], isError: true };
+            }
+        }
+    );
+
+    // Tool: List all tables
+    server.tool(
+        "list_tables",
+        {},
+        async () => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:read')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT name, schema, created_at, updated_at FROM user_tables WHERE user_id = $1 ORDER BY name",
+                    [userId]
+                );
+
+                if (res.rows.length === 0) {
+                    return { content: [{ type: "text", text: "📭 No tables found. Use 'create_table' to create one!" }] };
+                }
+
+                const list = res.rows.map((t, i) => {
+                    const cols = t.schema.map(c => `${c.name}:${c.type}`).join(', ');
+                    return `${i + 1}. **${t.name}** (${cols})\n   📅 Created: ${t.created_at}`;
+                }).join('\n\n');
+
+                return {
+                    content: [{ type: "text", text: `📊 Your Tables (${res.rows.length}):\n\n${list}` }]
+                };
+            } catch (err) {
+                console.error("Error listing tables:", err);
+                return { content: [{ type: "text", text: `Error listing tables: ${err.message}` }], isError: true };
+            }
+        }
+    );
+
+    // Tool: Get table data
+    server.tool(
+        "get_table",
+        {
+            name: z.string().describe("Name of the table to retrieve")
+        },
+        async ({ name }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:read')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
+                    [userId, name]
+                );
+
+                if (res.rows.length === 0) {
+                    return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
+                }
+
+                const table = res.rows[0];
+                const decryptedData = JSON.parse(decrypt(table.data));
+
+                if (decryptedData.length === 0) {
+                    const cols = table.schema.map(c => c.name).join(' | ');
+                    return { content: [{ type: "text", text: `📊 Table "${name}" (empty)\n\nColumns: ${cols}\n\nUse 'add_row' to add data.` }] };
+                }
+
+                // Format as a text table
+                const cols = table.schema.map(c => c.name);
+                const header = `_row_id | ${cols.join(' | ')}`;
+                const separator = '-'.repeat(header.length);
+                const rows = decryptedData.map(row => {
+                    const vals = cols.map(c => String(row[c] ?? ''));
+                    return `${row._row_id} | ${vals.join(' | ')}`;
+                });
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `📊 Table "${name}" (${decryptedData.length} rows):\n\n${header}\n${separator}\n${rows.join('\n')}`
+                    }]
+                };
+            } catch (err) {
+                console.error("Error getting table:", err);
+                return { content: [{ type: "text", text: `Error getting table: ${err.message}` }], isError: true };
+            }
+        }
+    );
+
+    // Tool: Add a row to a table
+    server.tool(
+        "add_row",
+        {
+            name: z.string().describe("Name of the table to add a row to"),
+            row: z.record(z.any()).describe("Object with column values, e.g. {\"task\": \"Buy milk\", \"priority\": 1}")
+        },
+        async ({ name, row }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT id, schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
+                    [userId, name]
+                );
+
+                if (res.rows.length === 0) {
+                    return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
+                }
+
+                const table = res.rows[0];
+                const tableSchema = table.schema;
+                const data = JSON.parse(decrypt(table.data));
+
+                // Apply defaults and validate
+                const fullRow = applyDefaults(tableSchema, row);
+                const errors = validateRow(tableSchema, fullRow);
+                if (errors.length > 0) {
+                    return { content: [{ type: "text", text: `❌ Validation errors:\n${errors.map(e => `  - ${e}`).join('\n')}` }], isError: true };
+                }
+
+                // Auto-increment _row_id
+                const maxId = data.reduce((max, r) => Math.max(max, r._row_id || 0), 0);
+                fullRow._row_id = maxId + 1;
+
+                data.push(fullRow);
+
+                const encryptedData = encrypt(JSON.stringify(data));
+
+                await pool.query(
+                    "UPDATE user_tables SET data = $1, updated_at = NOW() WHERE id = $2",
+                    [encryptedData, table.id]
+                );
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `✅ Row added to "${name}" (row_id: ${fullRow._row_id})\n\n${JSON.stringify(fullRow, null, 2)}`
+                    }]
+                };
+            } catch (err) {
+                console.error("Error adding row:", err);
+                return { content: [{ type: "text", text: `Error adding row: ${err.message}` }], isError: true };
+            }
+        }
+    );
+
+    // Tool: Update a row in a table
+    server.tool(
+        "update_row",
+        {
+            name: z.string().describe("Name of the table"),
+            row_id: z.number().describe("The _row_id of the row to update"),
+            updates: z.record(z.any()).describe("Object with fields to update, e.g. {\"status\": \"done\"}")
+        },
+        async ({ name, row_id, updates }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT id, schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
+                    [userId, name]
+                );
+
+                if (res.rows.length === 0) {
+                    return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
+                }
+
+                const table = res.rows[0];
+                const data = JSON.parse(decrypt(table.data));
+
+                const rowIndex = data.findIndex(r => r._row_id === row_id);
+                if (rowIndex === -1) {
+                    return { content: [{ type: "text", text: `❌ Row ${row_id} not found in "${name}".` }], isError: true };
+                }
+
+                // Validate update fields against schema
+                const knownCols = new Set(table.schema.map(c => c.name));
+                for (const key of Object.keys(updates)) {
+                    if (!knownCols.has(key)) {
+                        return { content: [{ type: "text", text: `❌ Unknown column: "${key}"` }], isError: true };
                     }
                 }
+
+                // Type check updates
+                for (const col of table.schema) {
+                    if (updates[col.name] !== undefined) {
+                        const val = updates[col.name];
+                        if (col.type === 'number' && typeof val !== 'number') {
+                            return { content: [{ type: "text", text: `❌ "${col.name}" must be a number` }], isError: true };
+                        }
+                        if (col.type === 'string' && typeof val !== 'string') {
+                            return { content: [{ type: "text", text: `❌ "${col.name}" must be a string` }], isError: true };
+                        }
+                        if (col.type === 'boolean' && typeof val !== 'boolean') {
+                            return { content: [{ type: "text", text: `❌ "${col.name}" must be a boolean` }], isError: true };
+                        }
+                    }
+                }
+
+                data[rowIndex] = { ...data[rowIndex], ...updates };
+
+                const encryptedData = encrypt(JSON.stringify(data));
+
+                await pool.query(
+                    "UPDATE user_tables SET data = $1, updated_at = NOW() WHERE id = $2",
+                    [encryptedData, table.id]
+                );
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `✅ Row ${row_id} updated in "${name}":\n\n${JSON.stringify(data[rowIndex], null, 2)}`
+                    }]
+                };
+            } catch (err) {
+                console.error("Error updating row:", err);
+                return { content: [{ type: "text", text: `Error updating row: ${err.message}` }], isError: true };
             }
-
-            data[rowIndex] = { ...data[rowIndex], ...updates };
-
-            const encryptedData = encrypt(JSON.stringify(data));
-
-            await pool.query(
-                "UPDATE user_tables SET data = $1, updated_at = NOW() WHERE id = $2",
-                [encryptedData, table.id]
-            );
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `✅ Row ${row_id} updated in "${name}":\n\n${JSON.stringify(data[rowIndex], null, 2)}`
-                }]
-            };
-        } catch (err) {
-            console.error("Error updating row:", err);
-            return { content: [{ type: "text", text: `Error updating row: ${err.message}` }], isError: true };
         }
-    }
-);
+    );
 
-// Tool: Delete a row from a table
-server.tool(
-    "delete_row",
-    {
-        name: z.string().describe("Name of the table"),
-        row_id: z.number().describe("The _row_id of the row to delete")
-    },
-    async ({ name, row_id }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+    // Tool: Delete a row from a table
+    server.tool(
+        "delete_row",
+        {
+            name: z.string().describe("Name of the table"),
+            row_id: z.number().describe("The _row_id of the row to delete")
+        },
+        async ({ name, row_id }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT id, data FROM user_tables WHERE user_id = $1 AND name = $2",
+                    [userId, name]
+                );
+
+                if (res.rows.length === 0) {
+                    return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
+                }
+
+                const table = res.rows[0];
+                const data = JSON.parse(decrypt(table.data));
+
+                const newData = data.filter(r => r._row_id !== row_id);
+                if (newData.length === data.length) {
+                    return { content: [{ type: "text", text: `❌ Row ${row_id} not found in "${name}".` }], isError: true };
+                }
+
+                const encryptedData = encrypt(JSON.stringify(newData));
+
+                await pool.query(
+                    "UPDATE user_tables SET data = $1, updated_at = NOW() WHERE id = $2",
+                    [encryptedData, table.id]
+                );
+
+                return {
+                    content: [{ type: "text", text: `🗑️ Row ${row_id} deleted from "${name}".` }]
+                };
+            } catch (err) {
+                console.error("Error deleting row:", err);
+                return { content: [{ type: "text", text: `Error deleting row: ${err.message}` }], isError: true };
             }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT id, data FROM user_tables WHERE user_id = $1 AND name = $2",
-                [userId, name]
-            );
-
-            if (res.rows.length === 0) {
-                return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
-            }
-
-            const table = res.rows[0];
-            const data = JSON.parse(decrypt(table.data));
-
-            const newData = data.filter(r => r._row_id !== row_id);
-            if (newData.length === data.length) {
-                return { content: [{ type: "text", text: `❌ Row ${row_id} not found in "${name}".` }], isError: true };
-            }
-
-            const encryptedData = encrypt(JSON.stringify(newData));
-
-            await pool.query(
-                "UPDATE user_tables SET data = $1, updated_at = NOW() WHERE id = $2",
-                [encryptedData, table.id]
-            );
-
-            return {
-                content: [{ type: "text", text: `🗑️ Row ${row_id} deleted from "${name}".` }]
-            };
-        } catch (err) {
-            console.error("Error deleting row:", err);
-            return { content: [{ type: "text", text: `Error deleting row: ${err.message}` }], isError: true };
         }
-    }
-);
+    );
 
-// Tool: Add a column to a table
-server.tool(
-    "add_column",
-    {
-        name: z.string().describe("Name of the table"),
-        column_name: z.string().describe("Name of the new column"),
-        type: z.enum(["string", "number", "boolean"]).describe("Data type of the new column"),
-        default_value: z.any().describe("Default value to backfill existing rows with")
-    },
-    async ({ name, column_name, type, default_value }) => {
-        try {
-            const user = requestContext.getStore();
-            if (!user) {
-                return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+    // Tool: Add a column to a table
+    server.tool(
+        "add_column",
+        {
+            name: z.string().describe("Name of the table"),
+            column_name: z.string().describe("Name of the new column"),
+            type: z.enum(["string", "number", "boolean"]).describe("Data type of the new column"),
+            default_value: z.any().describe("Default value to backfill existing rows with")
+        },
+        async ({ name, column_name, type, default_value }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized" }], isError: true };
+                }
+
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:write')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT id, schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
+                    [userId, name]
+                );
+
+                if (res.rows.length === 0) {
+                    return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
+                }
+
+                const table = res.rows[0];
+
+                // Check if column already exists
+                if (table.schema.some(c => c.name === column_name)) {
+                    return { content: [{ type: "text", text: `❌ Column "${column_name}" already exists in "${name}".` }], isError: true };
+                }
+
+                // Add to schema
+                const newSchema = [...table.schema, { name: column_name, type, default: default_value }];
+
+                // Backfill existing rows
+                const data = JSON.parse(decrypt(table.data));
+                for (const row of data) {
+                    row[column_name] = default_value;
+                }
+
+                const encryptedData = encrypt(JSON.stringify(data));
+
+                await pool.query(
+                    "UPDATE user_tables SET schema = $1, data = $2, updated_at = NOW() WHERE id = $3",
+                    [JSON.stringify(newSchema), encryptedData, table.id]
+                );
+
+                return {
+                    content: [{
+                        type: "text",
+                        text: `✅ Column "${column_name}" (${type}) added to "${name}" with default value: ${JSON.stringify(default_value)}.\n${data.length} existing rows backfilled.`
+                    }]
+                };
+            } catch (err) {
+                console.error("Error adding column:", err);
+                return { content: [{ type: "text", text: `Error adding column: ${err.message}` }], isError: true };
             }
-
-            const scopes = (user.scope || '').split(' ');
-            if (!scopes.includes('memories:write')) {
-                return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:write' scope." }], isError: true };
-            }
-
-            const userId = user.sub;
-
-            const res = await pool.query(
-                "SELECT id, schema, data FROM user_tables WHERE user_id = $1 AND name = $2",
-                [userId, name]
-            );
-
-            if (res.rows.length === 0) {
-                return { content: [{ type: "text", text: `❌ Table "${name}" not found.` }], isError: true };
-            }
-
-            const table = res.rows[0];
-
-            // Check if column already exists
-            if (table.schema.some(c => c.name === column_name)) {
-                return { content: [{ type: "text", text: `❌ Column "${column_name}" already exists in "${name}".` }], isError: true };
-            }
-
-            // Add to schema
-            const newSchema = [...table.schema, { name: column_name, type, default: default_value }];
-
-            // Backfill existing rows
-            const data = JSON.parse(decrypt(table.data));
-            for (const row of data) {
-                row[column_name] = default_value;
-            }
-
-            const encryptedData = encrypt(JSON.stringify(data));
-
-            await pool.query(
-                "UPDATE user_tables SET schema = $1, data = $2, updated_at = NOW() WHERE id = $3",
-                [JSON.stringify(newSchema), encryptedData, table.id]
-            );
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `✅ Column "${column_name}" (${type}) added to "${name}" with default value: ${JSON.stringify(default_value)}.\n${data.length} existing rows backfilled.`
-                }]
-            };
-        } catch (err) {
-            console.error("Error adding column:", err);
-            return { content: [{ type: "text", text: `Error adding column: ${err.message}` }], isError: true };
         }
-    }
-);
+    );
+
+    return server;
+}
 
 app.use(cors());
 app.use(express.json());
@@ -883,32 +890,36 @@ app.get('/health', (req, res) => {
 });
 
 // Session management for Streamable HTTP
-const transports = new Map();
+const sessions = new Map();
 
 // Create and configure transport for MCP Streamable HTTP
 async function handleMcpRequest(req, res) {
     // Check for existing session
     const sessionId = req.headers['mcp-session-id'];
 
-    let transport;
+    let sessionData;
 
-    if (sessionId && transports.has(sessionId)) {
+    if (sessionId && sessions.has(sessionId)) {
         // Reuse existing transport
-        transport = transports.get(sessionId);
+        sessionData = sessions.get(sessionId);
     } else if (!sessionId) {
-        // New session - create transport (supports both GET for SSE and POST for standalone JSON)
-        transport = new StreamableHTTPServerTransport({
+        // New session - create transport and a dedicated server instance
+        const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
         });
 
-        // Connect the server to this transport
+        const server = createMcpServer();
+
+        // Connect the server to this transport (1-to-1 relationship required by MCP SDK)
         await server.connect(transport);
+
+        sessionData = { transport, server };
 
         // Store for session reuse
         transport.onclose = () => {
             if (transport.sessionId) {
                 console.log(`📴 Session ${transport.sessionId} closed`);
-                transports.delete(transport.sessionId);
+                sessions.delete(transport.sessionId);
             }
         };
 
@@ -926,17 +937,17 @@ async function handleMcpRequest(req, res) {
     // Handle the request with User Context
     if (req.user) {
         await requestContext.run(req.user, async () => {
-            await transport.handleRequest(req, res, req.body);
+            await sessionData.transport.handleRequest(req, res, req.body);
         });
     } else {
         // Fallback or unauthenticated (should be blocked by middleware usually)
-        await transport.handleRequest(req, res, req.body);
+        await sessionData.transport.handleRequest(req, res, req.body);
     }
 
     // Store transport with session ID after first request
-    if (transport.sessionId && !transports.has(transport.sessionId)) {
-        transports.set(transport.sessionId, transport);
-        console.log(`📡 New session ${transport.sessionId} created (user: ${req.user?.sub || 'unknown'})`);
+    if (sessionData.transport.sessionId && !sessions.has(sessionData.transport.sessionId)) {
+        sessions.set(sessionData.transport.sessionId, sessionData);
+        console.log(`📡 New session ${sessionData.transport.sessionId} created (user: ${req.user?.sub || 'unknown'})`);
     }
 }
 
