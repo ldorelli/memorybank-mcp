@@ -437,6 +437,22 @@ oidcBasicAuth.use(injectScopes('/basicauth'));
 
 // Mount Providers
 // Mount specific routes first
+
+// DEBUG: Log DCR requests and capture response for debugging
+app.use('/reg', (req, res, next) => {
+    console.log('DEBUG DCR: Method:', req.method, 'Content-Type:', req.headers['content-type']);
+    console.log('DEBUG DCR: Body:', JSON.stringify(req.body));
+
+    // Capture response body
+    const originalSend = res.send;
+    res.send = function (body) {
+        console.log('DEBUG DCR: Response Status:', res.statusCode);
+        console.log('DEBUG DCR: Response Body:', typeof body === 'string' ? body : JSON.stringify(body));
+        return originalSend.call(this, body);
+    };
+    next();
+});
+
 app.use('/dcr', oidcLegacy.callback());
 app.use('/basicauth', oidcBasicAuth.callback());
 
