@@ -442,7 +442,8 @@ oidcBasicAuth.use(injectScopes('/basicauth'));
 // Mount specific routes first
 
 // DEBUG: Log DCR requests and capture response for debugging
-app.use('/reg', (req, res, next) => {
+app.use(['/reg', '/token'], (req, res, next) => {
+    console.log('DEBUG OIDC_ROUTE:', req.url, 'Method:', req.method, 'Content-Type:', req.headers['content-type']);
     console.log('DEBUG DCR: Method:', req.method, 'Content-Type:', req.headers['content-type']);
     console.log('DEBUG DCR: Body:', JSON.stringify(req.body));
 
