@@ -262,38 +262,52 @@ function createMcpServer() {
                 }
 
                 const components = [];
+                const childIds = [];
+
                 // Add a header
                 components.push({
                     id: "memories-header",
-                    component: "Text",
-                    text: `📚 Your Recent Memories (${res.rows.length})`,
-                    variant: "h2"
+                    component: {
+                        Text: { text: { literal: `📚 Your Recent Memories (${res.rows.length})` }, usageHint: "h2" }
+                    }
                 });
+                childIds.push("memories-header");
 
                 // Add memories
                 res.rows.forEach((row, i) => {
                     const decryptedContent = decrypt(row.content);
+                    const memId = `memory-${i}`;
                     components.push({
-                        id: `memory-${row.id}`,
-                        component: "Text",
-                        text: `**[${row.id}]** ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n*📅 ${row.created_at}*`,
-                        variant: "body"
+                        id: memId,
+                        component: {
+                            Text: {
+                                text: { literal: `[${row.id.substring(0, 8)}] ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n📅 ${row.created_at}` },
+                                usageHint: "body"
+                            }
+                        }
                     });
+                    childIds.push(memId);
+                });
+
+                // Root column to contain all children
+                components.push({
+                    id: "root",
+                    component: {
+                        Column: { children: { explicitList: childIds } }
+                    }
                 });
 
                 const a2ui_payload = [
                     {
-                        "version": "v0.9",
-                        "createSurface": {
-                            "surfaceId": "default",
-                            "catalogId": "https://a2ui.org/specification/v0_9/basic_catalog.json"
+                        beginRendering: {
+                            surfaceId: "default",
+                            root: "root"
                         }
                     },
                     {
-                        "version": "v0.9",
-                        "updateComponents": {
-                            "surfaceId": "default",
-                            "components": components
+                        surfaceUpdate: {
+                            surfaceId: "default",
+                            components: components
                         }
                     }
                 ];
