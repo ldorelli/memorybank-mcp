@@ -2,6 +2,7 @@ import Provider from 'oidc-provider';
 import express from 'express';
 import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
 import pgAdapter from './adapter.js'; // Note .js extension
 import path from 'path';
 import pg from 'pg';
@@ -44,6 +45,7 @@ app.enable('trust proxy'); // Required for Railway/Load Balancers
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cookieParser());
+app.use(cors()); // Allow browser-based MCP clients (Inspector) to reach /reg, /token, etc.
 
 // Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
 // PLACED HERE to ensure it hits before any middleware or other routes
