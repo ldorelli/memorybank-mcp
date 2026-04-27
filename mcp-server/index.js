@@ -229,6 +229,101 @@ function createMcpServer() {
         }
     );
 
+    // Tool: List all memories (UI Version)
+    server.tool(
+        "ui_list_memories",
+        {
+            limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
+        },
+        async ({ limit = 10 }) => {
+            try {
+                const user = requestContext.getStore();
+                if (!user) {
+                    return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
+                }
+
+                // Verify Scope
+                const scopes = (user.scope || '').split(' ');
+                if (!scopes.includes('memories:read')) {
+                    return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
+                }
+
+                const userId = user.sub;
+
+                const res = await pool.query(
+                    "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+                    [userId, limit]
+                );
+
+                if (res.rows.length === 0) {
+                    return {
+                        content: [{ type: "text", text: "📭 No memories found. Use 'save_memory' to create your first one!" }]
+                    };
+                }
+
+                const components = [];
+                // Add a header
+                components.push({
+                    id: "memories-header",
+                    component: "Text",
+                    text: `📚 Your Recent Memories (${res.rows.length})`,
+                    variant: "h2"
+                });
+
+                // Add memories
+                res.rows.forEach((row, i) => {
+                    const decryptedContent = decrypt(row.content);
+                    components.push({
+                        id: `memory-${row.id}`,
+                        component: "Text",
+                        text: `**[${row.id}]** ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n*📅 ${row.created_at}*`,
+                        variant: "body"
+                    });
+                });
+
+                const a2ui_payload = [
+                    {
+                        "version": "v0.9",
+                        "createSurface": {
+                            "surfaceId": "default",
+                            "catalogId": "https://a2ui.org/specification/v0_9/basic_catalog.json"
+                        }
+                    },
+                    {
+                        "version": "v0.9",
+                        "updateComponents": {
+                            "surfaceId": "default",
+                            "components": components
+                        }
+                    }
+                ];
+
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: `Displayed ${res.rows.length} memories in the UI`
+                        },
+                        {
+                            type: "resource",
+                            resource: {
+                                uri: "a2ui://memories-list",
+                                mimeType: "application/json+a2ui",
+                                text: JSON.stringify(a2ui_payload)
+                            }
+                        }
+                    ]
+                };
+            } catch (err) {
+                console.error("Error listing memories (UI):", err);
+                return {
+                    content: [{ type: "text", text: `Error listing memories: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
     // Tool: Search memories
     server.tool(
         "search_memories",
