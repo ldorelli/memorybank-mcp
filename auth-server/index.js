@@ -173,7 +173,7 @@ const configuration = {
         },
     },
     // Define custom scopes for MemoryBank
-    scopes: ['openid', 'offline_access', 'memories:read', 'memories:write'],
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'memories:read', 'memories:write'],
     // Custom claims (standard OIDC + our custom ones)
     claims: {
         openid: ['sub', 'email'],
