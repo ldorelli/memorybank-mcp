@@ -264,32 +264,87 @@ function createMcpServer() {
                 const components = [];
                 const childIds = [];
 
-                // Add a header
+                // 1. Header Row
                 components.push({
-                    id: "memories-header",
+                    id: "header-icon",
+                    component: { Icon: { name: { literal: "book" } } }
+                });
+                components.push({
+                    id: "header-text",
                     component: {
-                        Text: { text: { literal: `📚 Your Recent Memories (${res.rows.length})` }, usageHint: "h2" }
+                        Text: { text: { literal: `Your Recent Memories (${res.rows.length})` }, usageHint: "h2" }
                     }
                 });
-                childIds.push("memories-header");
+                components.push({
+                    id: "memories-header-row",
+                    component: {
+                        Row: { children: { explicitList: ["header-icon", "header-text"] } }
+                    }
+                });
+                childIds.push("memories-header-row");
 
-                // Add memories
+                // 2. Divider
+                components.push({
+                    id: "header-divider",
+                    component: { Divider: {} }
+                });
+                childIds.push("header-divider");
+
+                // 3. Add memories as Cards
                 res.rows.forEach((row, i) => {
                     const decryptedContent = decrypt(row.content);
-                    const memId = `memory-${i}`;
+                    const shortId = row.id.substring(0, 8);
+
+                    const dateIconId = `date-icon-${i}`;
+                    const dateTextId = `date-text-${i}`;
+                    const dateRowId = `date-row-${i}`;
+                    const contentTextId = `content-text-${i}`;
+                    const cardColId = `card-col-${i}`;
+                    const cardId = `card-${i}`;
+
+                    // Date row with icon
                     components.push({
-                        id: memId,
+                        id: dateIconId,
+                        component: { Icon: { name: { literal: "event" } } }
+                    });
+                    components.push({
+                        id: dateTextId,
+                        component: {
+                            Text: { text: { literal: `[${shortId}] ${row.created_at}` }, usageHint: "caption" }
+                        }
+                    });
+                    components.push({
+                        id: dateRowId,
+                        component: { Row: { children: { explicitList: [dateIconId, dateTextId] } } }
+                    });
+
+                    // Main content
+                    components.push({
+                        id: contentTextId,
                         component: {
                             Text: {
-                                text: { literal: `[${row.id.substring(0, 8)}] ${decryptedContent.substring(0, 100)}${decryptedContent.length > 100 ? '...' : ''}\n📅 ${row.created_at}` },
+                                text: { literal: decryptedContent },
                                 usageHint: "body"
                             }
                         }
                     });
-                    childIds.push(memId);
+
+                    // Column inside card
+                    components.push({
+                        id: cardColId,
+                        component: { Column: { children: { explicitList: [dateRowId, contentTextId] } } }
+                    });
+
+                    // Card wrapper
+                    components.push({
+                        id: cardId,
+                        component: { Card: { child: cardColId } }
+                    });
+
+                    childIds.push(cardId);
                 });
 
-                // Root column to contain all children
+                // Root column to contain all top-level children
                 components.push({
                     id: "root",
                     component: {
