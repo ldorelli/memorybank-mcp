@@ -45,57 +45,104 @@ try {
     console.error("Failed to initialize JWKS set. Is Auth Server running?", e);
 }
 
-// Middleware to verify JWT
-async function authMiddleware(req, res, next) {
-    // Helper to send 401 with correct discovery headers
-    const send401 = (message) => {
-        const baseUrl = process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com';
-        let metadataPath = '/.well-known/oauth-protected-resource';
-        let realm = 'MemoryBank MCP';
+// Per-tool authorization config.
+// Open tools need no auth; everything else needs a valid token carrying the scope below.
+const OPEN_TOOLS = new Set(['ping', 'get_random_quote']);
+const TOOL_SCOPES = {
+    save_memory: 'memories:write',
+    list_memories: 'memories:read',
+    ui_list_memories: 'memories:read',
+    search_memories: 'memories:read',
+    delete_memory: 'memories:write',
+    create_table: 'memories:write',
+    list_tables: 'memories:read',
+    get_table: 'memories:read',
+    add_row: 'memories:write',
+    update_row: 'memories:write',
+    delete_row: 'memories:write',
+    add_column: 'memories:write',
+};
 
-        if (req.path.startsWith('/dcr')) {
-            metadataPath = '/dcr/.well-known/oauth-protected-resource';
-            realm = 'MemoryBank Legacy DCR';
-        } else if (req.path.startsWith('/basicauth')) {
-            metadataPath = '/basicauth/.well-known/oauth-protected-resource';
-            realm = 'MemoryBank BasicAuth';
-        }
+function resourceMetadataUrlFor(req) {
+    const baseUrl = process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com';
+    if (req.path.startsWith('/dcr')) return `${baseUrl}/dcr/.well-known/oauth-protected-resource`;
+    if (req.path.startsWith('/basicauth')) return `${baseUrl}/basicauth/.well-known/oauth-protected-resource`;
+    return `${baseUrl}/.well-known/oauth-protected-resource`;
+}
 
-        const resourceMetadataUrl = `${baseUrl}${metadataPath}`;
+function realmFor(req) {
+    if (req.path.startsWith('/dcr')) return 'MemoryBank Legacy DCR';
+    if (req.path.startsWith('/basicauth')) return 'MemoryBank BasicAuth';
+    return 'MemoryBank MCP';
+}
 
-        res.setHeader('Link', `<${resourceMetadataUrl}>; rel="describedby"`);
-        res.setHeader('WWW-Authenticate', `Bearer realm="${realm}", scope="openid memories:read memories:write", resource_metadata="${resourceMetadataUrl}"`);
+// 401 with RFC 9728 discovery headers. `scope` names the scope(s) required for
+// the specific operation being challenged (per-operation step-up flow).
+function send401(req, res, message, scope = 'openid memories:read memories:write') {
+    const resourceMetadataUrl = resourceMetadataUrlFor(req);
+    res.setHeader('Link', `<${resourceMetadataUrl}>; rel="describedby"`);
+    res.setHeader('WWW-Authenticate', `Bearer realm="${realmFor(req)}", scope="${scope}", resource_metadata="${resourceMetadataUrl}"`);
+    return res.status(401).json({ error: message });
+}
 
-        return res.status(401).json({ error: message });
-    };
-
+function extractToken(req) {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        // Check query strings for EventSource compatibility
-        if (req.query.token) {
-            req.token = req.query.token;
-        } else {
-            return send401('Missing Authorization Header');
-        }
-    } else {
-        req.token = authHeader.split(' ')[1];
-    }
+    if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.split(' ')[1];
+    if (req.query.token) return req.query.token; // EventSource compatibility
+    return null;
+}
 
+// HARD auth: reject any request without a valid token. Used by the REST routes.
+async function authMiddleware(req, res, next) {
+    const token = extractToken(req);
+    if (!token) return send401(req, res, 'Missing Authorization Header');
     try {
-        // Debug: Log token format
-        console.log('DEBUG: Token received (first 50 chars):', req.token?.substring(0, 50) + '...');
-        console.log('DEBUG: Token has 3 parts (JWT):', req.token?.split('.').length === 3);
-
-        const { payload } = await jwtVerify(req.token, JWKS);
+        const { payload } = await jwtVerify(token, JWKS);
+        req.token = token;
         req.user = payload;
-        console.log('DEBUG: JWT verified for user:', payload.sub);
         next();
     } catch (err) {
-        console.error("JWT Verification failed:", err.message);
-        console.error("DEBUG: Full token:", req.token);
-
-        return send401('Invalid Token');
+        console.error('JWT Verification failed:', err.message);
+        return send401(req, res, 'Invalid Token');
     }
+}
+
+// SOFT auth: attach the user if a valid token is present, but never reject.
+// The per-tool gate decides whether an absent/invalid user is acceptable.
+async function softAuth(req, res, next) {
+    const token = extractToken(req);
+    if (token) {
+        try {
+            const { payload } = await jwtVerify(token, JWKS);
+            req.token = token;
+            req.user = payload;
+        } catch (err) {
+            console.error('softAuth: token present but invalid:', err.message);
+            // Leave req.user undefined; protected tools get challenged below.
+        }
+    }
+    next();
+}
+
+// Per-tool gate (SEP-2243): decide auth based on the tool being called. Reads
+// Mcp-Method/Mcp-Name headers, falling back to the JSON-RPC body for clients
+// that don't yet emit those headers.
+function toolAuthGate(req, res, next) {
+    const method = req.headers['mcp-method'] || req.body?.method;
+    const name = req.headers['mcp-name'] || req.body?.params?.name;
+
+    // Discovery/lifecycle methods (initialize, tools/list, notifications…) stay
+    // open so clients can enumerate tools before authenticating.
+    if (method !== 'tools/call') return next();
+
+    // Open/demo tools run anonymously.
+    if (OPEN_TOOLS.has(name)) return next();
+
+    // Protected tool: require a valid token and challenge with the exact scope.
+    if (!req.user) {
+        return send401(req, res, `Authentication required for tool '${name}'`, TOOL_SCOPES[name] || 'memories:read memories:write');
+    }
+    next();
 }
 
 const AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'https://localhost:3000';
@@ -121,6 +168,36 @@ function createMcpServer() {
         },
         instructions: "MemoryBank helps you save and retrieve personal memories and notes. Use the 'save_memory' tool to store new memories, 'list_memories' to see your saved memories, and 'search_memories' to find specific ones."
     });
+
+    // ============ OPEN TOOLS (no auth required) ============
+
+    // Tool: Ping — liveness check, open to everyone
+    server.tool(
+        "ping",
+        {},
+        async () => {
+            return { content: [{ type: "text", text: `pong 🏓 ${new Date().toISOString()}` }] };
+        }
+    );
+
+    // Tool: Get a random quote — open demo tool, no auth required
+    server.tool(
+        "get_random_quote",
+        {},
+        async () => {
+            const quotes = [
+                { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
+                { text: "Simplicity is the ultimate sophistication.", author: "Leonardo da Vinci" },
+                { text: "The unexamined life is not worth living.", author: "Socrates" },
+                { text: "What we know is a drop, what we don't know is an ocean.", author: "Isaac Newton" },
+                { text: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
+                { text: "Memory is the treasury and guardian of all things.", author: "Cicero" },
+                { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Aristotle" }
+            ];
+            const q = quotes[Math.floor(Math.random() * quotes.length)];
+            return { content: [{ type: "text", text: `"${q.text}"\n— ${q.author}` }] };
+        }
+    );
 
     // ============ TOOLS ============
 
@@ -1115,35 +1192,39 @@ async function handleMcpRequest(req, res) {
     }
 }
 
+// MCP routes use soft auth + per-tool gate: open tools and discovery work
+// anonymously, protected tools are challenged with a 401 by toolAuthGate.
+const mcpAuth = [softAuth, toolAuthGate];
+
 // ============ LEGACY DCR ROUTES (Testing) ============
 // Alias MCP handlers for /dcr path
-app.post('/dcr', authMiddleware, handleMcpRequest);
-app.get('/dcr', authMiddleware, handleMcpRequest);
+app.post('/dcr', mcpAuth, handleMcpRequest);
+app.get('/dcr', mcpAuth, handleMcpRequest);
 
 // Explicitly handle /dcr/mcp
-app.post('/dcr/mcp', authMiddleware, handleMcpRequest);
-app.get('/dcr/mcp', authMiddleware, handleMcpRequest);
-app.delete('/dcr/mcp', authMiddleware, handleMcpRequest);
+app.post('/dcr/mcp', mcpAuth, handleMcpRequest);
+app.get('/dcr/mcp', mcpAuth, handleMcpRequest);
+app.delete('/dcr/mcp', mcpAuth, handleMcpRequest);
 
 // ============ BASICAUTH ROUTES ============
 // Alias MCP handlers for /basicauth path
-app.post('/basicauth', authMiddleware, handleMcpRequest);
-app.get('/basicauth', authMiddleware, handleMcpRequest);
+app.post('/basicauth', mcpAuth, handleMcpRequest);
+app.get('/basicauth', mcpAuth, handleMcpRequest);
 
 // Explicitly handle /basicauth/mcp
-app.post('/basicauth/mcp', authMiddleware, handleMcpRequest);
-app.get('/basicauth/mcp', authMiddleware, handleMcpRequest);
-app.delete('/basicauth/mcp', authMiddleware, handleMcpRequest);
+app.post('/basicauth/mcp', mcpAuth, handleMcpRequest);
+app.get('/basicauth/mcp', mcpAuth, handleMcpRequest);
+app.delete('/basicauth/mcp', mcpAuth, handleMcpRequest);
 
 
 // ============ STANDARD MCP ROUTES ============
 // Main MCP endpoints - POST for JSON-RPC, GET for SSE streams
-app.post('/', authMiddleware, handleMcpRequest);
-app.get('/', authMiddleware, handleMcpRequest);
+app.post('/', mcpAuth, handleMcpRequest);
+app.get('/', mcpAuth, handleMcpRequest);
 
-app.post('/mcp', authMiddleware, handleMcpRequest);
-app.get('/mcp', authMiddleware, handleMcpRequest);
-app.delete('/mcp', authMiddleware, handleMcpRequest);
+app.post('/mcp', mcpAuth, handleMcpRequest);
+app.get('/mcp', mcpAuth, handleMcpRequest);
+app.delete('/mcp', mcpAuth, handleMcpRequest);
 
 // ============ REST API (OpenAI GPT Actions Compatibility) ============
 
