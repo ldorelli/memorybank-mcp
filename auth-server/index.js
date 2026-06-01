@@ -150,14 +150,24 @@ const pool = new Pool({
 
 // Helper validation function
 const findAccount = async (ctx, id) => {
-    // id is the email in this simple example, or user ID
-    // We need to look up the user
-    const res = await pool.query('SELECT id, email FROM users WHERE id = $1', [id]);
+    const res = await pool.query('SELECT id, email, email_verified FROM users WHERE id = $1', [id]);
     if (res.rows.length === 0) return undefined;
+    const row = res.rows[0];
     return {
         accountId: id,
         async claims(use, scope) {
-            return { sub: id, email: res.rows[0].email };
+            const requested = new Set((scope || '').split(' ').filter(Boolean));
+            const out = { sub: id };
+            if (requested.has('email')) {
+                out.email = row.email;
+                out.email_verified = !!row.email_verified;
+            }
+            if (requested.has('profile')) {
+                // We don't store a display name; derive a sensible fallback from email.
+                out.preferred_username = row.email;
+                out.name = row.email.split('@')[0];
+            }
+            return out;
         },
     };
 };
@@ -177,9 +187,11 @@ const configuration = {
     },
     // Define custom scopes for MemoryBank
     scopes: ['openid', 'profile', 'email', 'offline_access', 'memories:read', 'memories:write'],
-    // Custom claims (standard OIDC + our custom ones)
+    // Claims per OIDC standard scope mapping + our resource scopes.
     claims: {
-        openid: ['sub', 'email'],
+        openid: ['sub'],
+        profile: ['name', 'preferred_username'],
+        email: ['email', 'email_verified'],
         'memories:read': ['memory_access'],
         'memories:write': ['memory_access'],
     },
