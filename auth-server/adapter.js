@@ -63,11 +63,11 @@ class PgAdapter {
                 }
                 return {
                     client_id: id,
-                    token_endpoint_auth_method: 'none',
-                    grant_types: ['authorization_code'],
+                    token_endpoint_auth_method: metadata.token_endpoint_auth_method || 'none',
+                    grant_types: metadata.grant_types || ['authorization_code'],
                     redirect_uris: metadata.redirect_uris,
-                    response_types: ['code'],
-                    scope: metadata.scope || 'openid memories:read memories:write',
+                    response_types: metadata.response_types || ['code'],
+                    scope: metadata.scope || 'openid profile email offline_access memories:read memories:write',
                     client_name: metadata.client_name,
                     logo_uri: metadata.logo_uri,
                     client_uri: metadata.client_uri,
