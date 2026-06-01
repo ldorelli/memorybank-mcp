@@ -5,13 +5,39 @@ MemoryBank MCP server, called an open tool, then attempted a protected tool —
 reconstructed from the deployed server logs and the implementation. Each phase
 is annotated with the actual headers, scopes, and identifiers exchanged.
 
-> Open this file on GitHub (or any Mermaid-aware viewer) for the rendered
-> diagram. To export as PNG/SVG for slides: paste into <https://mermaid.live>
-> or run `mmdc -i DEMO_FLOW.md -o flow.png`.
+![OAuth + per-tool auth flow](assets/oauth-flow.svg)
 
-## The flow
+> Static render committed alongside this doc. Slide-ready PNG (2400px wide):
+> [`assets/oauth-flow.png`](assets/oauth-flow.png).
+
+<details>
+<summary><strong>Mermaid source</strong> (click to expand / edit)</summary>
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'fontFamily': 'ui-sans-serif, system-ui, sans-serif',
+    'fontSize': '15px',
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#111827',
+    'primaryBorderColor': '#111827',
+    'lineColor': '#111827',
+    'actorBkg': '#1f2937',
+    'actorTextColor': '#ffffff',
+    'actorBorder': '#111827',
+    'actorLineColor': '#111827',
+    'signalColor': '#111827',
+    'signalTextColor': '#111827',
+    'noteBkgColor': '#fff7ed',
+    'noteTextColor': '#1f2937',
+    'noteBorderColor': '#9a3412',
+    'sequenceNumberColor': '#ffffff',
+    'labelBoxBkgColor': '#fef3c7',
+    'labelBoxBorderColor': '#92400e',
+    'labelTextColor': '#111827'
+  }
+}}%%
 sequenceDiagram
     autonumber
     actor U as User
@@ -21,7 +47,7 @@ sequenceDiagram
     participant A as Auth Server<br>8bitmemory.com
     participant D as Claude CIMD doc<br>claude.ai/oauth/...
 
-    rect rgb(232, 244, 255)
+    rect rgb(191, 219, 254)
     Note over U,M: 1 · Anonymous connect & open-tool demo
     U->>C: "Add MemoryBank connector"
     C->>M: POST /mcp · initialize (no token)
@@ -33,7 +59,7 @@ sequenceDiagram
     M-->>C: 200 · "The unexamined life…" — Socrates
     end
 
-    rect rgb(255, 240, 232)
+    rect rgb(254, 215, 170)
     Note over U,M: 2 · Protected tool → per-operation 401 challenge
     U->>C: "Save that quote"
     C->>M: POST /mcp · tools/call save_memory
@@ -41,7 +67,7 @@ sequenceDiagram
     M-->>C: 401 Unauthorized<br>WWW-Authenticate: Bearer<br>  scope="memories:write"<br>  resource_metadata="…/.well-known/oauth-protected-resource"
     end
 
-    rect rgb(244, 232, 255)
+    rect rgb(233, 213, 255)
     Note over C,A: 3 · OAuth + CIMD discovery (no DCR)
     C->>M: GET /.well-known/oauth-protected-resource
     M-->>C: { authorization_servers: ["https://8bitmemory.com"],<br>scopes_supported: [openid, profile, email, offline_access,<br>memories:read, memories:write] }
@@ -50,7 +76,7 @@ sequenceDiagram
     Note over C,A: Claude uses its CIMD URL as client_id<br>(no Dynamic Client Registration)
     end
 
-    rect rgb(232, 255, 240)
+    rect rgb(187, 247, 208)
     Note over U,A: 4 · Authorization, login & consent
     C->>B: Open /authorize<br>client_id=https://claude.ai/oauth/mcp-oauth-client-metadata<br>scope=openid profile email offline_access memories:read memories:write<br>resource=https://mcp.8bitmemory.com/<br>code_challenge_method=S256 · prompt=consent
     B->>A: GET /authorize
@@ -68,7 +94,7 @@ sequenceDiagram
     B->>C: forwards callback (code + state)
     end
 
-    rect rgb(255, 250, 232)
+    rect rgb(253, 224, 71)
     Note over C,A: 5 · Token exchange & retry
     C->>A: POST /token<br>grant_type=authorization_code · code · code_verifier (PKCE)<br>client_id=[CIMD URL] · resource=https://mcp.8bitmemory.com/
     A->>D: GET CIMD doc (re-validate client)
@@ -80,6 +106,8 @@ sequenceDiagram
     C-->>U: "Saved the quote to your memories."
     end
 ```
+
+</details>
 
 ## What's notable for the demo
 
