@@ -183,83 +183,24 @@ const configuration = {
         'memories:read': ['memory_access'],
         'memories:write': ['memory_access'],
     },
-    // Dynamic Client Lookup (Dual Auth: DCR + Metadata)
-    async findClient(ctx, id) {
-        // 1. Legacy / Static DCR Client
-        if (id === 'mcp_client') {
-            return {
-                client_id: 'mcp_client',
-                client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
-                grant_types: ['authorization_code'],
-                redirect_uris: [
-                    'https://oauth.pstmn.io/v1/callback',
-                    'https://mcp.8bitmemory.com/health'
-                ],
-                response_types: ['code'],
-                scope: DEFAULT_SCOPES,
-            };
-        }
-
-        // 2. Client ID Metadata (URL-based Identity)
-        // Check if we are in "Legacy Mode" (User testing DCR-only)
-        if (ctx.query && ctx.query.force_dcr === 'true') {
-            console.log('DEBUG: Legacy Mode enabled. Rejecting potential Metadata client:', id);
-            // If it looks like a URL, reject it to emulate a server that doesn't support it
-            if (id.startsWith('http://') || id.startsWith('https://')) {
-                return undefined;
-            }
-        }
-
-        // If ID is a URL, fetch metadata
-        if (id.startsWith('http://') || id.startsWith('https://')) {
-            try {
-                console.log('DEBUG: Fetching Client Metadata from:', id);
-                // Security: In prod, ensure strict timeouts and size limits to prevent DoS
-                const response = await fetch(id, { signal: AbortSignal.timeout(5000) });
-
-                if (!response.ok) {
-                    console.error(`Failed to fetch client metadata: ${response.status}`);
-                    return undefined;
-                }
-
-                const metadata = await response.json();
-
-                // Validate Metadata (Basic Spec checks)
-                if (metadata.client_id !== id) {
-                    console.error('Metadata client_id mismatch');
-                    return undefined;
-                }
-
-                // Inject our default scopes if they aren't explicitly restricted? 
-                // Actually, the client just needs to be returned.
-                // We need to map it to oidc-provider's expected format.
-
-                return {
-                    client_id: id,
-                    client_secret: undefined,
-                    token_endpoint_auth_method: 'none',
-
-                    grant_types: ['authorization_code', 'implicit'],
-                    redirect_uris: metadata.redirect_uris,
-                    response_types: ['code'],
-                    scope: metadata.scope || DEFAULT_SCOPES,
-
-                    // Metadata fields for Enhanced Consent Screen
-                    client_name: metadata.client_name,
-                    logo_uri: metadata.logo_uri,
-                    client_uri: metadata.client_uri,
-                    policy_uri: metadata.policy_uri,
-                    tos_uri: metadata.tos_uri,
-                };
-
-            } catch (err) {
-                console.error('Error fetching/parsing client metadata:', err);
-                return undefined;
-            }
-        }
-
-        return undefined;
-    },
+    // Statically-registered clients (Postman, etc.). DCR-issued clients and
+    // CIMD clients (URL-as-client_id) are resolved dynamically by the adapter —
+    // see PgAdapter.find() in adapter.js.
+    // NOTE: oidc-provider has no `findClient` configuration hook; URL-based
+    // client resolution must happen in the adapter, not here.
+    clients: [
+        {
+            client_id: 'mcp_client',
+            client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
+            grant_types: ['authorization_code'],
+            redirect_uris: [
+                'https://oauth.pstmn.io/v1/callback',
+                'https://mcp.8bitmemory.com/health'
+            ],
+            response_types: ['code'],
+            scope: DEFAULT_SCOPES,
+        },
+    ],
     // Advertise Client ID Metadata Support
     discovery: {
         client_id_metadata_document_supported: true,
@@ -339,10 +280,6 @@ const oidc = new Provider(issuer, configuration);
 const legacyIssuer = `${issuer}/dcr`;
 const legacyConfiguration = {
     ...configuration,
-    // Override findClient to be undefined (falls back to clients array) 
-    // OR enforce strict check if we reused the object. 
-    // Since 'configuration' has 'findClient', we must remove it.
-    findClient: undefined,
     clients: [{
         client_id: 'mcp_client',
         client_secret: process.env.MCP_CLIENT_SECRET || 'mcp_secret',
@@ -385,7 +322,6 @@ const oidcLegacy = new Provider(legacyIssuer, legacyConfiguration);
 const basicAuthIssuer = `${issuer}/basicauth`;
 const basicAuthConfiguration = {
     ...configuration,
-    findClient: undefined,
     clients: [{
         client_id: 'google_mcp_client',
         client_secret: process.env.GOOGLE_MCP_CLIENT_SECRET || 'google_secret',

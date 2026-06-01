@@ -43,6 +43,43 @@ class PgAdapter {
 
     async find(id) {
         console.log(`DEBUG: Finding ${this.name} (${id})`);
+
+        // CIMD (draft-ietf-oauth-client-id-metadata-document): when oidc-provider
+        // looks up a Client by a URL-shaped client_id, fetch the Client ID
+        // Metadata Document at that URL and return it as an ephemeral public
+        // client. This is the path used by claude.ai and other modern MCP hosts.
+        if (this.name === 'Client' && /^https?:\/\//.test(id)) {
+            try {
+                console.log('DEBUG: Fetching Client Metadata from:', id);
+                const response = await fetch(id, { signal: AbortSignal.timeout(5000) });
+                if (!response.ok) {
+                    console.error(`CIMD fetch failed (${id}): HTTP ${response.status}`);
+                    return undefined;
+                }
+                const metadata = await response.json();
+                if (metadata.client_id !== id) {
+                    console.error(`CIMD client_id mismatch (id=${id}, metadata.client_id=${metadata.client_id})`);
+                    return undefined;
+                }
+                return {
+                    client_id: id,
+                    token_endpoint_auth_method: 'none',
+                    grant_types: ['authorization_code'],
+                    redirect_uris: metadata.redirect_uris,
+                    response_types: ['code'],
+                    scope: metadata.scope || 'openid memories:read memories:write',
+                    client_name: metadata.client_name,
+                    logo_uri: metadata.logo_uri,
+                    client_uri: metadata.client_uri,
+                    policy_uri: metadata.policy_uri,
+                    tos_uri: metadata.tos_uri,
+                };
+            } catch (err) {
+                console.error(`CIMD fetch error (${id}):`, err.message);
+                return undefined;
+            }
+        }
+
         try {
             const res = await pool.query('SELECT payload, expires_at FROM oauth_payloads WHERE id = $1 AND type = $2', [id, this.name]);
             if (res.rows.length === 0) {
