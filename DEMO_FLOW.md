@@ -17,9 +17,9 @@ sequenceDiagram
     actor U as User
     participant C as Claude (claude.ai)
     participant B as Browser
-    participant M as MCP Server<br/>mcp.8bitmemory.com
-    participant A as Auth Server<br/>8bitmemory.com
-    participant D as Claude CIMD doc<br/>claude.ai/oauth/...
+    participant M as MCP Server<br>mcp.8bitmemory.com
+    participant A as Auth Server<br>8bitmemory.com
+    participant D as Claude CIMD doc<br>claude.ai/oauth/...
 
     rect rgb(232, 244, 255)
     Note over U,M: 1 · Anonymous connect & open-tool demo
@@ -37,32 +37,32 @@ sequenceDiagram
     Note over U,M: 2 · Protected tool → per-operation 401 challenge
     U->>C: "Save that quote"
     C->>M: POST /mcp · tools/call save_memory
-    Note right of M: softAuth: no token<br/>toolAuthGate: Mcp-Name=save_memory<br/>→ challenge
-    M-->>C: 401 Unauthorized<br/>WWW-Authenticate: Bearer<br/>  scope="memories:write"<br/>  resource_metadata="…/.well-known/oauth-protected-resource"
+    Note right of M: softAuth: no token<br>toolAuthGate: Mcp-Name=save_memory<br>→ challenge
+    M-->>C: 401 Unauthorized<br>WWW-Authenticate: Bearer<br>  scope="memories:write"<br>  resource_metadata="…/.well-known/oauth-protected-resource"
     end
 
     rect rgb(244, 232, 255)
     Note over C,A: 3 · OAuth + CIMD discovery (no DCR)
     C->>M: GET /.well-known/oauth-protected-resource
-    M-->>C: { authorization_servers: ["https://8bitmemory.com"],<br/>scopes_supported: [openid, profile, email, offline_access,<br/>memories:read, memories:write] }
+    M-->>C: { authorization_servers: ["https://8bitmemory.com"],<br>scopes_supported: [openid, profile, email, offline_access,<br>memories:read, memories:write] }
     C->>A: GET /.well-known/oauth-authorization-server
-    A-->>C: { authorize/token endpoints,<br/>client_id_metadata_document_supported: true }
-    Note over C,A: Claude uses its CIMD URL as client_id<br/>(no Dynamic Client Registration)
+    A-->>C: { authorize/token endpoints,<br>client_id_metadata_document_supported: true }
+    Note over C,A: Claude uses its CIMD URL as client_id<br>(no Dynamic Client Registration)
     end
 
     rect rgb(232, 255, 240)
     Note over U,A: 4 · Authorization, login & consent
-    C->>B: Open /authorize<br/>client_id=https://claude.ai/oauth/mcp-oauth-client-metadata<br/>scope=openid profile email offline_access memories:read memories:write<br/>resource=https://mcp.8bitmemory.com/<br/>code_challenge_method=S256 · prompt=consent
+    C->>B: Open /authorize<br>client_id=https://claude.ai/oauth/mcp-oauth-client-metadata<br>scope=openid profile email offline_access memories:read memories:write<br>resource=https://mcp.8bitmemory.com/<br>code_challenge_method=S256 · prompt=consent
     B->>A: GET /authorize
     A->>D: GET https://claude.ai/oauth/mcp-oauth-client-metadata  (CIMD fetch)
-    D-->>A: { client_name: "Claude",<br/>redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],<br/>grant_types: ["authorization_code","refresh_token"],<br/>token_endpoint_auth_method: "none" }
-    A-->>B: Redirect → /interaction/&lt;uid&gt;<br/>prompt: consent (op_scopes_missing, rs_scopes_missing)
-    B->>A: GET /interaction/&lt;uid&gt;  (login page)
+    D-->>A: { client_name: "Claude",<br>redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],<br>grant_types: ["authorization_code","refresh_token"],<br>token_endpoint_auth_method: "none" }
+    A-->>B: Redirect → /interaction/[uid]<br>prompt: consent (op_scopes_missing, rs_scopes_missing)
+    B->>A: GET /interaction/[uid]  (login page)
     U->>B: email / password
-    B->>A: POST /interaction/&lt;uid&gt;/login
+    B->>A: POST /interaction/[uid]/login
     A-->>B: Redirect → consent screen
     U->>B: clicks "Allow"
-    B->>A: POST /interaction/&lt;uid&gt;/confirm
+    B->>A: POST /interaction/[uid]/confirm
     A->>A: interactionFinished({ consent: { grantId } })
     A-->>B: Redirect → https://claude.ai/api/mcp/auth_callback?code=…&state=…
     B->>C: forwards callback (code + state)
@@ -70,12 +70,12 @@ sequenceDiagram
 
     rect rgb(255, 250, 232)
     Note over C,A: 5 · Token exchange & retry
-    C->>A: POST /token<br/>grant_type=authorization_code · code · code_verifier (PKCE)<br/>client_id=&lt;CIMD URL&gt; · resource=https://mcp.8bitmemory.com/
+    C->>A: POST /token<br>grant_type=authorization_code · code · code_verifier (PKCE)<br>client_id=[CIMD URL] · resource=https://mcp.8bitmemory.com/
     A->>D: GET CIMD doc (re-validate client)
     D-->>A: client metadata
-    A-->>C: { access_token (JWT, aud=mcp.8bitmemory.com),<br/>refresh_token, id_token (sub, email, name) }
-    C->>M: POST /mcp · tools/call save_memory<br/>Authorization: Bearer &lt;jwt&gt;
-    Note right of M: softAuth verifies JWT → attaches req.user<br/>toolAuthGate: token present, pass<br/>handler re-checks scopes.includes('memories:write')
+    A-->>C: { access_token (JWT, aud=mcp.8bitmemory.com),<br>refresh_token, id_token (sub, email, name) }
+    C->>M: POST /mcp · tools/call save_memory<br>Authorization: Bearer [jwt]
+    Note right of M: softAuth verifies JWT → attaches req.user<br>toolAuthGate: token present, pass<br>handler re-checks scopes.includes('memories:write')
     M-->>C: 200 · "✅ Memory saved"
     C-->>U: "Saved the quote to your memories."
     end
