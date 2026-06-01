@@ -939,6 +939,20 @@ app.post('/interaction/:uid/confirm', async (req, res, next) => {
         await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: true });
         console.log('DEBUG: interactionFinished completed');
     } catch (err) {
+        // Browser back/refresh after a completed interaction re-submits the
+        // consent form, but the interaction session is already consumed. The
+        // OAuth flow has already succeeded at that point, so render a friendly
+        // "you're done" page instead of oidc-provider's generic 400.
+        if (err && (err.name === 'SessionNotFound' || err.message === 'interaction session not found')) {
+            console.log('DEBUG: /confirm called on already-consumed interaction; showing success page.');
+            return res.status(200).send(
+                '<!doctype html><html><head><meta charset="utf-8"><title>Sign-in complete</title>' +
+                '<style>body{font-family:system-ui,sans-serif;max-width:480px;margin:80px auto;padding:0 16px;color:#222}h1{font-size:1.5rem}p{color:#555}</style>' +
+                '</head><body><h1>You\'re signed in 🎉</h1>' +
+                '<p>The authorization is already complete. You can close this window and return to the app.</p>' +
+                '</body></html>'
+            );
+        }
         console.error('DEBUG: Error in /confirm:', err);
         next(err);
     }
