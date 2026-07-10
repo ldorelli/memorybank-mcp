@@ -173,7 +173,7 @@ function createMcpServer() {
         name: "memorybank",
         version: "1.0.0",
         title: "MemoryBank MCP Server",
-        description: "A personal memory and notes management server. Store, retrieve, and search through your thoughts and memories with AI assistance."
+        description: "MemoryBank is a personal memory and structured-data server. It stores free-form **memories** (notes, thoughts, facts worth keeping) and lightweight **tables** (typed, schema-validated rows) — all encrypted at rest and scoped to the authenticated user. It also ships an interactive MCP App panel for browsing and managing memories inline."
     }, {
         capabilities: {
             tools: {},
@@ -186,24 +186,46 @@ function createMcpServer() {
                 }
             }
         },
-        instructions: "MemoryBank helps you save and retrieve personal memories and notes. Use the 'save_memory' tool to store new memories, 'list_memories' to see your saved memories, and 'search_memories' to find specific ones."
+        instructions: `MemoryBank stores the user's personal memories and structured tables. All data is **private to the authenticated user** and encrypted at rest.
+
+## Memories (free-form notes)
+- \`save_memory\` — store a new memory
+- \`show_memories\` — **preferred for browsing**: renders an interactive panel where the user can filter, save, and delete directly
+- \`list_memories\` / \`search_memories\` — plain-text listing and keyword search (use when you need the content as text to reason over)
+- \`delete_memory\` — permanently remove a memory by ID
+
+## Tables (typed, schema-validated rows)
+- \`create_table\` defines named columns (\`string\` | \`number\` | \`boolean\`, optional \`required\`/\`default\`)
+- \`list_tables\`, \`get_table\` to inspect; \`add_row\`, \`update_row\`, \`delete_row\`, \`add_column\` to modify
+- Rows are validated against the schema; every row gets an auto-incremented \`_row_id\` used by update/delete
+
+## Authorization
+Tools are gated per-tool: \`ping\` and \`get_random_quote\` work without authentication; everything else requires an OAuth token with \`memories:read\` or \`memories:write\` scope. A call without the right scope returns a 401 challenge naming the exact scope needed.`
     });
 
     // ============ OPEN TOOLS (no auth required) ============
 
     // Tool: Ping — liveness check, open to everyone
-    server.tool(
+    server.registerTool(
         "ping",
-        {},
+        {
+            title: "Ping",
+            description: "Liveness check for the MemoryBank server. Returns `pong` with the server's current ISO-8601 timestamp.\n\n- **No authentication required** — works before the user signs in\n- Useful to verify connectivity or measure round-trip latency",
+            annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
+        },
         async () => {
             return { content: [{ type: "text", text: `pong 🏓 ${new Date().toISOString()}` }] };
         }
     );
 
     // Tool: Get a random quote — open demo tool, no auth required
-    server.tool(
+    server.registerTool(
         "get_random_quote",
-        {},
+        {
+            title: "Get Random Quote",
+            description: "Returns a random inspirational quote (text + author) from a small curated collection.\n\n- **No authentication required** — works before the user signs in\n- Demo tool showcasing MemoryBank's open (unauthenticated) tool tier",
+            annotations: { readOnlyHint: true, openWorldHint: false }
+        },
         async () => {
             const quotes = [
                 { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
@@ -222,11 +244,16 @@ function createMcpServer() {
     // ============ TOOLS ============
 
     // Tool: Save a new memory
-    server.tool(
+    server.registerTool(
         "save_memory",
         {
-            content: z.string().describe("The content of the memory to save"),
-            tags: z.array(z.string()).optional().describe("Optional tags for organizing memories")
+            title: "Save Memory",
+            description: "Store a new memory (a note, thought, fact, or anything worth remembering) in the user's private MemoryBank.\n\n- Content is **encrypted at rest** and visible only to this user\n- Returns the new memory's `id` and creation timestamp — the `id` is what `delete_memory` takes later\n- Requires scope: `memories:write`",
+            inputSchema: {
+                content: z.string().describe("The content of the memory to save"),
+                tags: z.array(z.string()).optional().describe("Optional tags for organizing memories")
+            },
+            annotations: { destructiveHint: false, openWorldHint: false }
         },
         async ({ content, tags }) => {
             try {
@@ -274,10 +301,15 @@ function createMcpServer() {
     );
 
     // Tool: List all memories
-    server.tool(
+    server.registerTool(
         "list_memories",
         {
-            limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
+            title: "List Memories",
+            description: "List the user's saved memories as plain text, most recent first. Each entry shows its `id`, a preview of the content (truncated at 100 characters), and its creation date.\n\n- Use this when you need memory content **as text to reason over**; prefer `show_memories` when the user wants to browse visually\n- Requires scope: `memories:read`",
+            inputSchema: {
+                limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
+            },
+            annotations: { readOnlyHint: true, openWorldHint: false }
         },
         async ({ limit = 10 }) => {
             try {
@@ -353,7 +385,7 @@ function createMcpServer() {
         "show_memories",
         {
             title: "Show Memories",
-            description: "Display the user's memories in an interactive UI panel where they can browse, filter, save, and delete memories.",
+            description: "Display the user's memories in an **interactive UI panel** rendered inline in the conversation. The panel lets the user browse, filter, compose new memories, and delete existing ones directly — its actions round-trip through the same authorized tools.\n\n- **Preferred over `list_memories`** whenever the user wants to see or manage their memories\n- Also returns the memory list as structured data for the model\n- Requires scope: `memories:read`",
             inputSchema: {
                 limit: z.number().optional().describe("Maximum number of memories to return (default: 50)")
             },
@@ -407,10 +439,15 @@ function createMcpServer() {
     );
 
     // Tool: Search memories
-    server.tool(
+    server.registerTool(
         "search_memories",
         {
-            query: z.string().describe("Search query to find memories")
+            title: "Search Memories",
+            description: "Search the user's memories by keyword. Matching is a **case-insensitive substring match** over the full memory content; returns up to 20 matches, most recent first, each with its `id`, a content preview, and creation date.\n\n- Requires scope: `memories:read`",
+            inputSchema: {
+                query: z.string().describe("Search query to find memories")
+            },
+            annotations: { readOnlyHint: true, openWorldHint: false }
         },
         async ({ query }) => {
             try {
@@ -468,10 +505,15 @@ function createMcpServer() {
     );
 
     // Tool: Delete a memory
-    server.tool(
+    server.registerTool(
         "delete_memory",
         {
-            id: z.string().describe("The ID of the memory to delete")
+            title: "Delete Memory",
+            description: "**Permanently delete** one of the user's memories by its `id` (as returned by `save_memory`, `list_memories`, or `search_memories`).\n\n- This cannot be undone — confirm with the user if there is any ambiguity about which memory to remove\n- Requires scope: `memories:write`",
+            inputSchema: {
+                id: z.string().describe("The ID of the memory to delete")
+            },
+            annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false }
         },
         async ({ id }) => {
             try {
@@ -556,16 +598,21 @@ function createMcpServer() {
     }
 
     // Tool: Create a new table
-    server.tool(
+    server.registerTool(
         "create_table",
         {
-            name: z.string().describe("Name of the table to create"),
-            schema: z.array(z.object({
-                name: z.string().describe("Column name"),
-                type: z.enum(["string", "number", "boolean"]).describe("Column data type"),
-                required: z.boolean().optional().describe("Whether this column is required (default: false)"),
-                default: z.any().optional().describe("Default value for this column")
-            })).describe("Array of column definitions")
+            title: "Create Table",
+            description: "Create a new named table with a typed column schema for storing structured data (todo lists, trackers, inventories, …).\n\n- Column types: `string` | `number` | `boolean`; columns may be `required` and/or carry a `default`\n- Rows added later are validated against this schema; every row gets an auto-incremented `_row_id`\n- Table names are unique per user; data is encrypted at rest\n- Requires scope: `memories:write`",
+            inputSchema: {
+                name: z.string().describe("Name of the table to create"),
+                schema: z.array(z.object({
+                    name: z.string().describe("Column name"),
+                    type: z.enum(["string", "number", "boolean"]).describe("Column data type"),
+                    required: z.boolean().optional().describe("Whether this column is required (default: false)"),
+                    default: z.any().optional().describe("Default value for this column")
+                })).describe("Array of column definitions")
+            },
+            annotations: { destructiveHint: false, openWorldHint: false }
         },
         async ({ name, schema }) => {
             try {
@@ -616,9 +663,13 @@ function createMcpServer() {
     );
 
     // Tool: List all tables
-    server.tool(
+    server.registerTool(
         "list_tables",
-        {},
+        {
+            title: "List Tables",
+            description: "List all of the user's tables with their column schemas (`name:type` pairs) and creation dates.\n\n- Requires scope: `memories:read`",
+            annotations: { readOnlyHint: true, openWorldHint: false }
+        },
         async () => {
             try {
                 const user = requestContext.getStore();
@@ -658,10 +709,15 @@ function createMcpServer() {
     );
 
     // Tool: Get table data
-    server.tool(
+    server.registerTool(
         "get_table",
         {
-            name: z.string().describe("Name of the table to retrieve")
+            title: "Get Table",
+            description: "Retrieve a table's full contents, rendered as a text table with one line per row. The first column is `_row_id` — the identifier `update_row` and `delete_row` take.\n\n- Requires scope: `memories:read`",
+            inputSchema: {
+                name: z.string().describe("Name of the table to retrieve")
+            },
+            annotations: { readOnlyHint: true, openWorldHint: false }
         },
         async ({ name }) => {
             try {
@@ -717,11 +773,16 @@ function createMcpServer() {
     );
 
     // Tool: Add a row to a table
-    server.tool(
+    server.registerTool(
         "add_row",
         {
-            name: z.string().describe("Name of the table to add a row to"),
-            row: z.record(z.any()).describe("Object with column values, e.g. {\"task\": \"Buy milk\", \"priority\": 1}")
+            title: "Add Row",
+            description: "Append a row to an existing table. The row is validated against the table's schema: unknown columns are rejected, missing optional columns are filled from their `default`, and missing `required` columns are an error.\n\n- Returns the stored row including its assigned `_row_id`\n- Requires scope: `memories:write`",
+            inputSchema: {
+                name: z.string().describe("Name of the table to add a row to"),
+                row: z.record(z.any()).describe("Object with column values, e.g. {\"task\": \"Buy milk\", \"priority\": 1}")
+            },
+            annotations: { destructiveHint: false, openWorldHint: false }
         },
         async ({ name, row }) => {
             try {
@@ -784,12 +845,17 @@ function createMcpServer() {
     );
 
     // Tool: Update a row in a table
-    server.tool(
+    server.registerTool(
         "update_row",
         {
-            name: z.string().describe("Name of the table"),
-            row_id: z.number().describe("The _row_id of the row to update"),
-            updates: z.record(z.any()).describe("Object with fields to update, e.g. {\"status\": \"done\"}")
+            title: "Update Row",
+            description: "Update specific fields of an existing row, identified by its `_row_id` (see `get_table`). Only the fields in `updates` change; the rest of the row is preserved. Updates are type-checked against the table schema and unknown columns are rejected.\n\n- Requires scope: `memories:write`",
+            inputSchema: {
+                name: z.string().describe("Name of the table"),
+                row_id: z.number().describe("The _row_id of the row to update"),
+                updates: z.record(z.any()).describe("Object with fields to update, e.g. {\"status\": \"done\"}")
+            },
+            annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false }
         },
         async ({ name, row_id, updates }) => {
             try {
@@ -869,11 +935,16 @@ function createMcpServer() {
     );
 
     // Tool: Delete a row from a table
-    server.tool(
+    server.registerTool(
         "delete_row",
         {
-            name: z.string().describe("Name of the table"),
-            row_id: z.number().describe("The _row_id of the row to delete")
+            title: "Delete Row",
+            description: "**Permanently delete** a row from a table, identified by its `_row_id` (see `get_table`). This cannot be undone.\n\n- Requires scope: `memories:write`",
+            inputSchema: {
+                name: z.string().describe("Name of the table"),
+                row_id: z.number().describe("The _row_id of the row to delete")
+            },
+            annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false }
         },
         async ({ name, row_id }) => {
             try {
@@ -924,13 +995,18 @@ function createMcpServer() {
     );
 
     // Tool: Add a column to a table
-    server.tool(
+    server.registerTool(
         "add_column",
         {
-            name: z.string().describe("Name of the table"),
-            column_name: z.string().describe("Name of the new column"),
-            type: z.enum(["string", "number", "boolean"]).describe("Data type of the new column"),
-            default_value: z.any().describe("Default value to backfill existing rows with")
+            title: "Add Column",
+            description: "Add a new typed column to an existing table. All existing rows are **backfilled** with `default_value`, and the column becomes part of the schema for future validation.\n\n- Requires scope: `memories:write`",
+            inputSchema: {
+                name: z.string().describe("Name of the table"),
+                column_name: z.string().describe("Name of the new column"),
+                type: z.enum(["string", "number", "boolean"]).describe("Data type of the new column"),
+                default_value: z.any().describe("Default value to backfill existing rows with")
+            },
+            annotations: { destructiveHint: false, openWorldHint: false }
         },
         async ({ name, column_name, type, default_value }) => {
             try {
