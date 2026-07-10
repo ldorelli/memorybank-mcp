@@ -9,10 +9,16 @@ import { z } from 'zod';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// MCP Apps (SEP-1865): HTML template rendered by the host in a sandboxed iframe.
+const MEMORIES_APP_URI = 'ui://memorybank/memories';
+const MCP_APP_MIME = 'text/html;profile=mcp-app';
+const MEMORIES_APP_HTML = readFileSync(join(__dirname, 'ui', 'memories.html'), 'utf8');
 
 // Context for passing User Auth to tools
 const requestContext = new AsyncLocalStorage();
@@ -51,7 +57,7 @@ const OPEN_TOOLS = new Set(['ping', 'get_random_quote']);
 const TOOL_SCOPES = {
     save_memory: 'memories:write',
     list_memories: 'memories:read',
-    ui_list_memories: 'memories:read',
+    show_memories: 'memories:read',
     search_memories: 'memories:read',
     delete_memory: 'memories:write',
     create_table: 'memories:write',
@@ -172,7 +178,13 @@ function createMcpServer() {
         capabilities: {
             tools: {},
             resources: {},
-            prompts: {}
+            prompts: {},
+            // MCP Apps extension (SEP-1865): tells hosts we serve HTML UI templates.
+            extensions: {
+                'io.modelcontextprotocol/ui': {
+                    mimeTypes: [MCP_APP_MIME]
+                }
+            }
         },
         instructions: "MemoryBank helps you save and retrieve personal memories and notes. Use the 'save_memory' tool to store new memories, 'list_memories' to see your saved memories, and 'search_memories' to find specific ones."
     });
@@ -314,159 +326,75 @@ function createMcpServer() {
         }
     );
 
-    // Tool: List all memories (UI Version)
-    server.tool(
-        "ui_list_memories",
+    // MCP Apps (SEP-1865): HTML template the host renders in a sandboxed iframe.
+    // The iframe talks back over postMessage JSON-RPC (tools/call, size-changed…).
+    server.registerResource(
+        "memories-app",
+        MEMORIES_APP_URI,
         {
-            limit: z.number().optional().describe("Maximum number of memories to return (default: 10)")
+            title: "MemoryBank Memories",
+            description: "Interactive memory browser: list, filter, save, and delete memories.",
+            mimeType: MCP_APP_MIME,
+            _meta: {
+                ui: { prefersBorder: true }
+            }
         },
-        async ({ limit = 10 }) => {
+        async () => ({
+            contents: [{
+                uri: MEMORIES_APP_URI,
+                mimeType: MCP_APP_MIME,
+                text: MEMORIES_APP_HTML
+            }]
+        })
+    );
+
+    // Tool: Show memories in the interactive UI (MCP App)
+    server.registerTool(
+        "show_memories",
+        {
+            title: "Show Memories",
+            description: "Display the user's memories in an interactive UI panel where they can browse, filter, save, and delete memories.",
+            inputSchema: {
+                limit: z.number().optional().describe("Maximum number of memories to return (default: 50)")
+            },
+            annotations: { readOnlyHint: true },
+            _meta: {
+                ui: { resourceUri: MEMORIES_APP_URI }
+            }
+        },
+        async ({ limit = 50 }) => {
             try {
                 const user = requestContext.getStore();
                 if (!user) {
                     return { content: [{ type: "text", text: "Error: Unauthorized (No User Context)" }], isError: true };
                 }
 
-                // Verify Scope
                 const scopes = (user.scope || '').split(' ');
                 if (!scopes.includes('memories:read')) {
                     return { content: [{ type: "text", text: "Error: Forbidden. Requires 'memories:read' scope." }], isError: true };
                 }
 
-                const userId = user.sub;
-
                 const res = await pool.query(
                     "SELECT id, content, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-                    [userId, limit]
+                    [user.sub, limit]
                 );
 
-                if (res.rows.length === 0) {
-                    return {
-                        content: [{ type: "text", text: "📭 No memories found. Use 'save_memory' to create your first one!" }]
-                    };
-                }
-
-                const components = [];
-                const childIds = [];
-
-                // 1. Header Row
-                components.push({
-                    id: "header-icon",
-                    component: { Icon: { name: { literal: "book" } } }
-                });
-                components.push({
-                    id: "header-text",
-                    component: {
-                        Text: { text: { literal: `Your Recent Memories (${res.rows.length})` }, usageHint: "h2" }
-                    }
-                });
-                components.push({
-                    id: "memories-header-row",
-                    component: {
-                        Row: { children: { explicitList: ["header-icon", "header-text"] } }
-                    }
-                });
-                childIds.push("memories-header-row");
-
-                // 2. Divider
-                components.push({
-                    id: "header-divider",
-                    component: { Divider: {} }
-                });
-                childIds.push("header-divider");
-
-                // 3. Add memories as Cards
-                res.rows.forEach((row, i) => {
-                    const decryptedContent = decrypt(row.content);
-                    const shortId = row.id.substring(0, 8);
-
-                    const dateIconId = `date-icon-${i}`;
-                    const dateTextId = `date-text-${i}`;
-                    const dateRowId = `date-row-${i}`;
-                    const contentTextId = `content-text-${i}`;
-                    const cardColId = `card-col-${i}`;
-                    const cardId = `card-${i}`;
-
-                    // Date row with icon
-                    components.push({
-                        id: dateIconId,
-                        component: { Icon: { name: { literal: "event" } } }
-                    });
-                    components.push({
-                        id: dateTextId,
-                        component: {
-                            Text: { text: { literal: `[${shortId}] ${row.created_at}` }, usageHint: "caption" }
-                        }
-                    });
-                    components.push({
-                        id: dateRowId,
-                        component: { Row: { children: { explicitList: [dateIconId, dateTextId] } } }
-                    });
-
-                    // Main content
-                    components.push({
-                        id: contentTextId,
-                        component: {
-                            Text: {
-                                text: { literal: decryptedContent },
-                                usageHint: "body"
-                            }
-                        }
-                    });
-
-                    // Column inside card
-                    components.push({
-                        id: cardColId,
-                        component: { Column: { children: { explicitList: [dateRowId, contentTextId] } } }
-                    });
-
-                    // Card wrapper
-                    components.push({
-                        id: cardId,
-                        component: { Card: { child: cardColId } }
-                    });
-
-                    childIds.push(cardId);
-                });
-
-                // Root column to contain all top-level children
-                components.push({
-                    id: "root",
-                    component: {
-                        Column: { children: { explicitList: childIds } }
-                    }
-                });
-
-                const a2ui_payload = [
-                    {
-                        beginRendering: {
-                            surfaceId: "default",
-                            root: "root"
-                        }
-                    },
-                    {
-                        surfaceUpdate: {
-                            surfaceId: "default",
-                            components: components
-                        }
-                    }
-                ];
+                const memories = res.rows.map(row => ({
+                    id: row.id,
+                    content: decrypt(row.content),
+                    created_at: row.created_at
+                }));
 
                 return {
-                    content: [
-                        {
-                            type: "text",
-                            text: `Displayed ${res.rows.length} memories in the UI`
-                        },
-                        {
-                            type: "resource",
-                            resource: {
-                                uri: "a2ui://memories-list",
-                                mimeType: "application/json+a2ui",
-                                text: JSON.stringify(a2ui_payload)
-                            }
-                        }
-                    ]
+                    content: [{
+                        type: "text",
+                        text: `Showing ${memories.length} memories in the MemoryBank panel.`
+                    }],
+                    // The iframe reads this via the ui/notifications/tool-result payload.
+                    structuredContent: {
+                        count: memories.length,
+                        memories
+                    }
                 };
             } catch (err) {
                 console.error("Error listing memories (UI):", err);

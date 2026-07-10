@@ -52,7 +52,7 @@ Legend: 🟢 open (no auth) · 🔒 requires token + scope
 | `get_random_quote` | 🟢 open | — |
 | `save_memory` | 🔒 | `memories:write` |
 | `list_memories` | 🔒 | `memories:read` |
-| `ui_list_memories` | 🔒 | `memories:read` |
+| `show_memories` | 🔒 | `memories:read` |
 | `search_memories` | 🔒 | `memories:read` |
 | `delete_memory` | 🔒 | `memories:write` |
 | `create_table` | 🔒 | `memories:write` |
@@ -111,7 +111,7 @@ Open tools (🟢) skip all of the above — they run on an anonymous request.
     "get_random_quote":  { "auth": "open" },
     "save_memory":      { "auth": "scoped", "scopes": ["memories:write"] },
     "list_memories":    { "auth": "scoped", "scopes": ["memories:read"] },
-    "ui_list_memories": { "auth": "scoped", "scopes": ["memories:read"] },
+    "show_memories":    { "auth": "scoped", "scopes": ["memories:read"] },
     "search_memories":  { "auth": "scoped", "scopes": ["memories:read"] },
     "delete_memory":    { "auth": "scoped", "scopes": ["memories:write"] },
     "create_table":     { "auth": "scoped", "scopes": ["memories:write"] },
@@ -130,7 +130,12 @@ Open tools (🟢) skip all of the above — they run on an anonymous request.
 - **Implemented:** OAuth 2.1 resource-server auth, RFC 9728 discovery, per-tool
   scope enforcement for the 12 memory/table tools, the open/no-auth tools
   (`ping`, `get_random_quote`), and the soft-auth gate (`softAuth` +
-  `toolAuthGate`) that lets anonymous requests reach open tools and `tools/list`
-  while still challenging protected ones.
+  `toolAuthGate`) that lets anonymous requests reach open tools while
+  challenging protected ones and `tools/list`.
+- **MCP Apps (SEP-1865):** the `show_memories` tool renders an interactive
+  memory browser via the `ui://memorybank/memories` HTML resource
+  (`text/html;profile=mcp-app`). The iframe's own actions (save/delete/refresh)
+  round-trip through the host as real `tools/call` requests, so they are subject
+  to the exact same per-tool scope enforcement as model-initiated calls.
 - Enforcement is layered: the HTTP gate keys off `Mcp-Name`, and each protected
   tool also re-checks its scope in-handler as defense in depth.

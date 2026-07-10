@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MemoryBank</title>
+<style>
+  :root {
+    --bg: #faf9f7;
+    --card: #ffffff;
+    --ink: #1c1917;
+    --muted: #78716c;
+    --border: #e7e5e4;
+    --accent: #7c3aed;
+    --accent-soft: #f3eefe;
+    --danger: #dc2626;
+    --shadow: 0 1px 2px rgba(28, 25, 23, .06), 0 4px 12px rgba(28, 25, 23, .05);
+  }
+  [data-theme="dark"] {
+    --bg: #1c1917;
+    --card: #292524;
+    --ink: #fafaf9;
+    --muted: #a8a29e;
+    --border: #3f3c39;
+    --accent: #a78bfa;
+    --accent-soft: #322a45;
+    --danger: #f87171;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .25);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+  }
+  .logo {
+    width: 34px; height: 34px; border-radius: 10px; flex: none;
+    background: linear-gradient(135deg, #8b5cf6, #d946ef);
+    display: grid; place-items: center; font-size: 17px;
+    box-shadow: var(--shadow);
+  }
+  h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+  .count {
+    font-size: 12px; font-weight: 600; color: var(--accent);
+    background: var(--accent-soft); border-radius: 999px; padding: 3px 10px;
+  }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; }
+  input[type="search"] {
+    flex: 1; font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 12px; outline: none;
+  }
+  input[type="search"]:focus { border-color: var(--accent); }
+  .composer {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 12px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .composer textarea {
+    width: 100%; font: inherit; font-size: 14px; color: var(--ink);
+    background: transparent; border: none; outline: none; resize: vertical;
+    min-height: 40px;
+  }
+  .composer-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+  button {
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    border: none; border-radius: 9px; padding: 8px 14px;
+    background: var(--accent); color: #fff; transition: filter .12s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .5; cursor: default; }
+  .grid { display: grid; gap: 10px; }
+  .memory {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 8px;
+    animation: rise .25s ease both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+  .memory p { font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .memory-meta {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+  }
+  .memory-meta .spacer { flex: 1; }
+  .del {
+    background: transparent; color: var(--muted); padding: 4px 8px; font-weight: 500;
+  }
+  .del:hover { color: var(--danger); filter: none; }
+  .state { text-align: center; color: var(--muted); font-size: 14px; padding: 36px 0; }
+  .spinner {
+    width: 22px; height: 22px; margin: 0 auto 10px;
+    border: 3px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 500;
+    padding: 9px 16px; border-radius: 999px; box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">🧠</div>
+    <h1>MemoryBank</h1>
+    <span class="count" id="count" hidden></span>
+  </header>
+
+  <div class="composer">
+    <textarea id="new-memory" placeholder="Write a new memory…"></textarea>
+    <div class="composer-row">
+      <button id="save-btn">Save memory</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Filter memories…" hidden>
+  </div>
+
+  <div id="list" class="grid">
+    <div class="state"><div class="spinner"></div>Loading your memories…</div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+// ---- Minimal JSON-RPC bridge to the MCP Apps host (SEP-1865) ----
+let nextId = 1;
+const pending = new Map();
+
+function rpc(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+  });
+}
+function notify(method, params) {
+  window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+}
+
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  if (!msg || msg.jsonrpc !== '2.0') return;
+
+  // Responses to our requests
+  if (msg.id !== undefined && pending.has(msg.id)) {
+    const { resolve, reject } = pending.get(msg.id);
+    pending.delete(msg.id);
+    if (msg.error) reject(new Error(msg.error.message || 'Host error'));
+    else resolve(msg.result);
+    return;
+  }
+
+  // Host notifications
+  if (msg.method === 'ui/notifications/tool-result') {
+    renderFromResult(msg.params);
+  }
+});
+
+// ---- App state & rendering ----
+let memories = [];
+let gotResult = false;
+
+const $ = (id) => document.getElementById(id);
+const listEl = $('list'), searchEl = $('search'), countEl = $('count'), toastEl = $('toast');
+
+function relTime(iso) {
+  const then = new Date(iso), mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.round(hrs / 24);
+  if (days < 30) return days + 'd ago';
+  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function reportSize() {
+  notify('ui/notifications/size-changed', {
+    height: Math.min(document.documentElement.scrollHeight + 8, 720)
+  });
+}
+
+function toast(text) {
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function render() {
+  const q = searchEl.value.trim().toLowerCase();
+  const rows = q ? memories.filter(m => m.content.toLowerCase().includes(q)) : memories;
+
+  countEl.hidden = false;
+  countEl.textContent = memories.length + (memories.length === 1 ? ' memory' : ' memories');
+  searchEl.hidden = memories.length < 2;
+
+  if (rows.length === 0) {
+    listEl.innerHTML = '<div class="state">' +
+      (q ? 'No memories match “' + escapeHtml(q) + '”.' : '📭 No memories yet — write your first one above.') +
+      '</div>';
+    reportSize();
+    return;
+  }
+
+  listEl.innerHTML = '';
+  for (const m of rows) {
+    const card = document.createElement('div');
+    card.className = 'memory';
+    card.innerHTML =
+      '<p>' + escapeHtml(m.content) + '</p>' +
+      '<div class="memory-meta">📅 ' + relTime(m.created_at) +
+      '<span class="spacer"></span>' +
+      '<button class="del" title="Delete this memory">Delete</button></div>';
+    card.querySelector('.del').addEventListener('click', () => deleteMemory(m, card));
+    listEl.appendChild(card);
+  }
+  reportSize();
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderFromResult(result) {
+  const sc = result && (result.structuredContent || (result.result && result.result.structuredContent));
+  if (sc && Array.isArray(sc.memories)) {
+    gotResult = true;
+    memories = sc.memories;
+    render();
+  }
+}
+
+// ---- Actions (round-trip through real MCP tools) ----
+async function refresh() {
+  try {
+    const res = await rpc('tools/call', { name: 'show_memories', arguments: {} });
+    renderFromResult(res);
+  } catch (err) {
+    toast('Could not refresh: ' + err.message);
+  }
+}
+
+async function saveMemory() {
+  const ta = $('new-memory'), content = ta.value.trim();
+  if (!content) return;
+  const btn = $('save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await rpc('tools/call', { name: 'save_memory', arguments: { content } });
+    ta.value = '';
+    toast('Memory saved ✨');
+    await refresh();
+  } catch (err) {
+    toast('Save failed: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save memory';
+  }
+}
+
+async function deleteMemory(m, card) {
+  card.style.opacity = '0.4';
+  try {
+    await rpc('tools/call', { name: 'delete_memory', arguments: { id: m.id } });
+    memories = memories.filter(x => x.id !== m.id);
+    toast('Memory deleted');
+    render();
+  } catch (err) {
+    card.style.opacity = '';
+    toast('Delete failed: ' + err.message);
+  }
+}
+
+$('save-btn').addEventListener('click', saveMemory);
+searchEl.addEventListener('input', render);
+$('new-memory').addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveMemory();
+});
+
+// ---- Handshake ----
+(async function init() {
+  try {
+    const res = await rpc('ui/initialize', {
+      appCapabilities: {},
+      appInfo: { name: 'memorybank-memories', version: '1.0.0' }
+    });
+    const theme = res && res.hostContext && res.hostContext.theme;
+    if (theme === 'dark' || (!theme && matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  } catch (_) {
+    if (matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  }
+  reportSize();
+  // If the host replays the original tool result we render from the
+  // notification; otherwise fall back to fetching fresh data.
+  setTimeout(() => { if (!gotResult) refresh(); }, 800);
+})();
+</script>
+</body>
+</html>
