@@ -86,9 +86,13 @@ MCP endpoints: `POST /mcp` (also `/`, `/dcr/mcp`, `/basicauth/mcp`).
    scope and executes.
 
 Open tools (🟢) skip all of the above — they run on an anonymous request.
-`tools/list` is reachable anonymously, so clients can discover every tool before
-authenticating; protected tools are listed but return a `401` challenge when
-called without the required scope.
+
+> **Current policy:** `tools/list` itself requires authentication — an anonymous
+> list request gets a `401` scope challenge, so the OAuth flow is triggered at
+> connect time rather than lazily on the first protected call. Open tools remain
+> callable anonymously at `tools/call` time. (The earlier lazy model —
+> anonymous discovery + per-call challenge — is one config change away:
+> the `tools/list` branch in `toolAuthGate`.)
 
 ## Machine-readable manifest
 

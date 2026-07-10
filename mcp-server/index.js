@@ -131,8 +131,16 @@ function toolAuthGate(req, res, next) {
     const method = req.headers['mcp-method'] || req.body?.method;
     const name = req.headers['mcp-name'] || req.body?.params?.name;
 
-    // Discovery/lifecycle methods (initialize, tools/list, notifications…) stay
-    // open so clients can enumerate tools before authenticating.
+    // tools/list is currently protected: clients must authenticate before they
+    // can enumerate tools. This front-loads the OAuth flow to connect time.
+    if (method === 'tools/list') {
+        if (!req.user) {
+            return send401(req, res, 'Authentication required to list tools', 'openid memories:read memories:write');
+        }
+        return next();
+    }
+
+    // Other lifecycle methods (initialize, notifications…) stay open.
     if (method !== 'tools/call') return next();
 
     // Open/demo tools run anonymously.
