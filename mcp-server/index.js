@@ -1145,6 +1145,31 @@ app.get('/health', (req, res) => {
 // Session management for Streamable HTTP
 const sessions = new Map();
 
+// Stateless handling (SEP-2575 direction): a request that isn't part of a
+// session gets a throwaway transport/server pair for just that request. This
+// lets clients call tools/list, resources/list, tools/call… without an
+// initialize handshake, and makes stale session ids recoverable instead of a
+// hard 404 (in-memory sessions don't survive redeploys).
+async function handleStatelessRequest(req, res) {
+    const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined, // stateless: no Mcp-Session-Id issued
+    });
+    const server = createMcpServer();
+    await server.connect(transport);
+    res.on('close', () => {
+        transport.close();
+        server.close();
+    });
+
+    if (req.user) {
+        await requestContext.run(req.user, async () => {
+            await transport.handleRequest(req, res, req.body);
+        });
+    } else {
+        await transport.handleRequest(req, res, req.body);
+    }
+}
+
 // Create and configure transport for MCP Streamable HTTP
 async function handleMcpRequest(req, res) {
     // Check for existing session
@@ -1152,11 +1177,15 @@ async function handleMcpRequest(req, res) {
 
     let sessionData;
 
+    const isInit = (m) => m?.method === 'initialize';
+    const wantsInitialize = Array.isArray(req.body) ? req.body.some(isInit) : isInit(req.body);
+
     if (sessionId && sessions.has(sessionId)) {
         // Reuse existing transport
         sessionData = sessions.get(sessionId);
-    } else if (!sessionId) {
-        // New session - create transport and a dedicated server instance
+    } else if (wantsInitialize) {
+        // Explicit initialize (fresh, or carrying a stale session id from before
+        // a redeploy) - create a session-bound transport and server
         const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
         });
@@ -1178,8 +1207,13 @@ async function handleMcpRequest(req, res) {
 
         // After first request, we'll have a session ID
         // We'll store it after handling the request
+    } else if (req.method === 'POST') {
+        // No session (or a stale one, e.g. after a redeploy): serve the request
+        // statelessly rather than failing with 400/404.
+        return handleStatelessRequest(req, res);
     } else {
-        // Invalid session
+        // GET (SSE stream) / DELETE against an unknown session can't be served
+        // statelessly - tell the client to start over.
         return res.status(404).json({
             jsonrpc: '2.0',
             error: { code: -32000, message: 'Session not found' },
