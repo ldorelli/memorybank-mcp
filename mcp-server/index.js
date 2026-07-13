@@ -391,7 +391,10 @@ Tools are gated per-tool: \`ping\` and \`get_random_quote\` work without authent
             },
             annotations: { readOnlyHint: true },
             _meta: {
-                ui: { resourceUri: MEMORIES_APP_URI }
+                ui: { resourceUri: MEMORIES_APP_URI },
+                // Legacy flat key kept in sync for older hosts, mirroring the
+                // official ext-apps registerAppTool normalization.
+                'ui/resourceUri': MEMORIES_APP_URI
             }
         },
         async ({ limit = 50 }) => {
