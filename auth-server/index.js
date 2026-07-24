@@ -185,6 +185,15 @@ const configuration = {
             return `/interaction/${interaction.uid}`;
         },
     },
+    // Refresh-token policy. The default also requires the `offline_access` scope,
+    // but Google account linking (and similar CIMD clients) request the
+    // `refresh_token` grant type without sending `offline_access`. Without this
+    // override the token response omits the refresh_token they require, and their
+    // linking flow retries and then cancels. Issue a refresh token whenever the
+    // client is allowed the grant type.
+    async issueRefreshToken(ctx, client, code) {
+        return client.grantTypeAllowed('refresh_token');
+    },
     // Define custom scopes for MemoryBank
     scopes: ['openid', 'profile', 'email', 'offline_access', 'memories:read', 'memories:write'],
     // Claims per OIDC standard scope mapping + our resource scopes.
