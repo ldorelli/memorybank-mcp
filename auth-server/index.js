@@ -3,7 +3,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import pgAdapter from './adapter.js'; // Note .js extension
+import pgAdapter, { queryWithRetry } from './adapter.js'; // Note .js extension
 import path from 'path';
 import pg from 'pg';
 import dotenv from 'dotenv';
@@ -150,7 +150,7 @@ const pool = new Pool({
 
 // Helper validation function
 const findAccount = async (ctx, id) => {
-    const res = await pool.query('SELECT id, email, email_verified FROM users WHERE id = $1', [id]);
+    const res = await queryWithRetry(pool, 'SELECT id, email, email_verified FROM users WHERE id = $1', [id]);
     if (res.rows.length === 0) return undefined;
     const row = res.rows[0];
     return {

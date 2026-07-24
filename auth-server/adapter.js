@@ -28,6 +28,43 @@ pool.query('SELECT NOW()', (err, res) => {
 const cimdCache = new Map(); // id -> { client, expiresAt }
 const CIMD_TTL_MS = 5 * 60 * 1000;
 
+// Retry transient DB failures (Postgres restart/boot windows, network blips)
+// with a short backoff instead of failing the request outright. The DB container
+// restarts periodically, and each restart is a brief window where queries throw
+// ETIMEDOUT/ECONNREFUSED or "the database system is starting up" (57P03). Without
+// this, those windows surface to clients (e.g. Google account linking) as 500s
+// that abort the whole flow and make them loop.
+const TRANSIENT_DB_CODES = new Set([
+    '57P03',                                     // cannot_connect_now (DB starting up)
+    '08006', '08001', '08004', '08003',          // connection exceptions
+    '53300',                                     // too_many_connections
+    'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'ENOTFOUND',
+]);
+
+export function isTransientDbError(err) {
+    if (!err) return false;
+    const codes = [err.code];
+    if (Array.isArray(err.errors)) for (const e of err.errors) codes.push(e && e.code);
+    if (codes.some((c) => c && TRANSIENT_DB_CODES.has(c))) return true;
+    return /starting up|ETIMEDOUT|ECONNREFUSED|ECONNRESET|Connection terminated/i.test(err.message || '');
+}
+
+export async function queryWithRetry(dbPool, text, params, { attempts = 5, baseDelayMs = 250, maxDelayMs = 2000 } = {}) {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+        try {
+            return await dbPool.query(text, params);
+        } catch (err) {
+            lastErr = err;
+            if (i === attempts - 1 || !isTransientDbError(err)) throw err;
+            const delay = Math.min(maxDelayMs, baseDelayMs * 2 ** i);
+            console.warn(`DB transient error (${err.code || err.message}); retry ${i + 1}/${attempts - 1} in ${delay}ms`);
+            await new Promise((r) => setTimeout(r, delay));
+        }
+    }
+    throw lastErr;
+}
+
 class PgAdapter {
     constructor(name) {
         this.name = name;
@@ -37,7 +74,7 @@ class PgAdapter {
         console.log(`DEBUG: Upserting ${this.name} (${id})`);
         try {
             const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
-            await pool.query(
+            await queryWithRetry(pool,
                 `INSERT INTO oauth_payloads (id, type, payload, grant_id, expires_at)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (id) DO UPDATE SET payload = $3, expires_at = $5, grant_id = $4`,
@@ -108,7 +145,7 @@ class PgAdapter {
         }
 
         try {
-            const res = await pool.query('SELECT payload, expires_at FROM oauth_payloads WHERE id = $1 AND type = $2', [id, this.name]);
+            const res = await queryWithRetry(pool,'SELECT payload, expires_at FROM oauth_payloads WHERE id = $1 AND type = $2', [id, this.name]);
             if (res.rows.length === 0) {
                 console.log(`DEBUG: ${id} NOT FOUND`);
                 return undefined;
@@ -132,7 +169,7 @@ class PgAdapter {
 
     async findByUserCode(userCode) {
         try {
-            const res = await pool.query("SELECT payload, expires_at FROM oauth_payloads WHERE payload->>'userCode' = $1 AND type = $2", [userCode, this.name]);
+            const res = await queryWithRetry(pool,"SELECT payload, expires_at FROM oauth_payloads WHERE payload->>'userCode' = $1 AND type = $2", [userCode, this.name]);
             if (res.rows.length === 0) return undefined;
             const { payload, expires_at } = res.rows[0];
             if (expires_at && expires_at < new Date()) return undefined;
@@ -145,7 +182,7 @@ class PgAdapter {
 
     async findByUid(uid) {
         try {
-            const res = await pool.query("SELECT payload, expires_at FROM oauth_payloads WHERE payload->>'uid' = $1 AND type = $2", [uid, this.name]);
+            const res = await queryWithRetry(pool,"SELECT payload, expires_at FROM oauth_payloads WHERE payload->>'uid' = $1 AND type = $2", [uid, this.name]);
             if (res.rows.length === 0) return undefined;
             const { payload, expires_at } = res.rows[0];
             if (expires_at && expires_at < new Date()) return undefined;
@@ -158,7 +195,7 @@ class PgAdapter {
 
     async destroy(id) {
         try {
-            await pool.query('DELETE FROM oauth_payloads WHERE id = $1 AND type = $2', [id, this.name]);
+            await queryWithRetry(pool,'DELETE FROM oauth_payloads WHERE id = $1 AND type = $2', [id, this.name]);
         } catch (err) {
             console.error(`PgAdapter destroy error (${this.name}, ${id}):`, err);
             throw err;
@@ -167,7 +204,7 @@ class PgAdapter {
 
     async revokeByGrantId(grantId) {
         try {
-            await pool.query('DELETE FROM oauth_payloads WHERE grant_id = $1', [grantId]);
+            await queryWithRetry(pool,'DELETE FROM oauth_payloads WHERE grant_id = $1', [grantId]);
         } catch (err) {
             console.error(`PgAdapter revokeByGrantId error (${this.name}, ${grantId}):`, err);
             throw err;
@@ -176,7 +213,7 @@ class PgAdapter {
 
     async consume(id) {
         try {
-            await pool.query(
+            await queryWithRetry(pool,
                 "UPDATE oauth_payloads SET payload = jsonb_set(payload, '{consumed}', 'true'::jsonb) WHERE id = $1 AND type = $2",
                 [id, this.name]
             );
