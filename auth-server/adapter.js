@@ -73,6 +73,18 @@ class PgAdapter {
                     client_uri: metadata.client_uri,
                     policy_uri: metadata.policy_uri,
                     tos_uri: metadata.tos_uri,
+                    // Forward the client's key material and asymmetric alg declarations.
+                    // Without these, a CIMD doc declaring private_key_jwt (or any
+                    // asymmetric signing/encryption alg) fails oidc-provider client
+                    // validation with "jwks or jwks_uri is mandatory for this client",
+                    // because the auth method survives the allow-list but its keys don't.
+                    jwks: metadata.jwks,
+                    jwks_uri: metadata.jwks_uri,
+                    request_object_signing_alg: metadata.request_object_signing_alg,
+                    id_token_encrypted_response_alg: metadata.id_token_encrypted_response_alg,
+                    userinfo_encrypted_response_alg: metadata.userinfo_encrypted_response_alg,
+                    introspection_encrypted_response_alg: metadata.introspection_encrypted_response_alg,
+                    authorization_encrypted_response_alg: metadata.authorization_encrypted_response_alg,
                 };
             } catch (err) {
                 console.error(`CIMD fetch error (${id}):`, err.message);
