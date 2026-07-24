@@ -20,6 +20,14 @@ pool.query('SELECT NOW()', (err, res) => {
     else console.log("Database connected:", res.rows[0]);
 });
 
+// Cache resolved CIMD (URL-as-client_id) metadata so we don't re-fetch the
+// client's document from the network on every authorize and token request.
+// oidc-provider calls Client.find() on each of those; without a cache a busy
+// linking flow means dozens of outbound fetches, any of which can transiently
+// fail and surface as `invalid_client`.
+const cimdCache = new Map(); // id -> { client, expiresAt }
+const CIMD_TTL_MS = 5 * 60 * 1000;
+
 class PgAdapter {
     constructor(name) {
         this.name = name;
@@ -49,6 +57,11 @@ class PgAdapter {
         // Metadata Document at that URL and return it as an ephemeral public
         // client. This is the path used by claude.ai and other modern MCP hosts.
         if (this.name === 'Client' && /^https?:\/\//.test(id)) {
+            const cached = cimdCache.get(id);
+            if (cached && cached.expiresAt > Date.now()) {
+                console.log('DEBUG: CIMD cache hit for:', id);
+                return cached.client;
+            }
             try {
                 console.log('DEBUG: Fetching Client Metadata from:', id);
                 const response = await fetch(id, { signal: AbortSignal.timeout(5000) });
@@ -61,7 +74,7 @@ class PgAdapter {
                     console.error(`CIMD client_id mismatch (id=${id}, metadata.client_id=${metadata.client_id})`);
                     return undefined;
                 }
-                return {
+                const client = {
                     client_id: id,
                     token_endpoint_auth_method: metadata.token_endpoint_auth_method || 'none',
                     grant_types: metadata.grant_types || ['authorization_code'],
@@ -86,6 +99,8 @@ class PgAdapter {
                     introspection_encrypted_response_alg: metadata.introspection_encrypted_response_alg,
                     authorization_encrypted_response_alg: metadata.authorization_encrypted_response_alg,
                 };
+                cimdCache.set(id, { client, expiresAt: Date.now() + CIMD_TTL_MS });
+                return client;
             } catch (err) {
                 console.error(`CIMD fetch error (${id}):`, err.message);
                 return undefined;
