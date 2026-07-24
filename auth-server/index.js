@@ -256,7 +256,7 @@ const configuration = {
             // Return JWT format for all resources
             getResourceServerInfo: (ctx, resourceIndicator, client) => {
                 return {
-                    scope: 'openid memories:read memories:write',
+                    scope: 'openid profile email offline_access memories:read memories:write',
                     audience: resourceIndicator,
                     accessTokenFormat: 'jwt', // This makes access tokens JWT format
                     accessTokenTTL: 3600, // 1 hour
@@ -327,7 +327,7 @@ const legacyConfiguration = {
             ...configuration.features.resourceIndicators,
             defaultResource: (ctx) => process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
             getResourceServerInfo: (ctx, resourceIndicator, client) => ({
-                scope: 'openid memories:read memories:write',
+                scope: 'openid profile email offline_access memories:read memories:write',
                 audience: resourceIndicator,
                 accessTokenFormat: 'jwt',
                 accessTokenTTL: 3600,
@@ -368,7 +368,7 @@ const basicAuthConfiguration = {
             ...configuration.features.resourceIndicators,
             defaultResource: (ctx) => process.env.MCP_SERVER_URL || 'https://mcp.8bitmemory.com',
             getResourceServerInfo: (ctx, resourceIndicator, client) => ({
-                scope: 'openid memories:read memories:write',
+                scope: 'openid profile email offline_access memories:read memories:write',
                 audience: resourceIndicator,
                 accessTokenFormat: 'jwt',
                 accessTokenTTL: 3600,
