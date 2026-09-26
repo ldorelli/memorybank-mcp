@@ -47,6 +47,14 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(cors()); // Allow browser-based MCP clients (Inspector) to reach /reg, /token, etc.
 
+// Google Connected Apps domain verification. The verifier fetches this exact
+// path and requires a direct 200 with the plain-text token; any 301/302
+// (e.g. www. or trailing-slash normalization) is rejected. Placed early so no
+// later middleware or redirect can intercept it.
+app.get('/.well-known/google-connected-apps', (req, res) => {
+    res.type('text/plain').status(200).send('google-connected-apps-verification=870e6505c121b4780eb2ce9a401b021922373ca0c6c34b0eac04b99a89980169');
+});
+
 // Alias for OAuth 2.0 Authorization Server Metadata (RFC 8414)
 // PLACED HERE to ensure it hits before any middleware or other routes
 app.get('/.well-known/oauth-authorization-server', (req, res) => {
