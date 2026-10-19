@@ -17,7 +17,10 @@ const __dirname = dirname(__filename);
 
 // MCP Apps (SEP-1865): HTML template rendered by the host in a sandboxed iframe.
 const MEMORIES_APP_URI = 'ui://memorybank/memories';
-const MCP_APP_MIME = 'text/html;profile=mcp-app';
+// Hosts validate the UI resource's MIME type against a strict allow-list
+// (text/html, text/css, text/javascript), so keep it a bare type with no
+// `;profile=...` parameter — the profile suffix makes the string fail that match.
+const MCP_APP_MIME = 'text/html';
 const MEMORIES_APP_HTML = readFileSync(join(__dirname, 'ui', 'memories.html'), 'utf8');
 
 // Context for passing User Auth to tools
