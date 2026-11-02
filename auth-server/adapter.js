@@ -8,11 +8,21 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '../.env') }); // Load .env from parent for Docker/Local split
 
 import pg from 'pg';
+import { fetchJsonFromPublicUrl } from './ssrf-guard.js';
 const { Pool } = pg;
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://admin:password@localhost:5432/memorybank_db',
-});
+// Never ship a default DSN with baked-in credentials into production. A missing
+// DATABASE_URL there is a misconfiguration we want to fail loudly on, not paper
+// over with admin:password. The localhost default is a local-dev convenience
+// only (and even locally .env usually sets DATABASE_URL).
+const isProd = process.env.NODE_ENV === 'production';
+const connectionString = process.env.DATABASE_URL
+    || (isProd ? null : 'postgresql://admin:password@localhost:5432/memorybank_db');
+if (!connectionString) {
+    throw new Error('DATABASE_URL is required in production');
+}
+
+const pool = new Pool({ connectionString });
 
 // Test connection
 pool.query('SELECT NOW()', (err, res) => {
@@ -93,7 +103,7 @@ class PgAdapter {
         // looks up a Client by a URL-shaped client_id, fetch the Client ID
         // Metadata Document at that URL and return it as an ephemeral public
         // client. This is the path used by claude.ai and other modern MCP hosts.
-        if (this.name === 'Client' && /^https?:\/\//.test(id)) {
+        if (this.name === 'Client' && /^https:\/\//.test(id)) {
             const cached = cimdCache.get(id);
             if (cached && cached.expiresAt > Date.now()) {
                 console.log('DEBUG: CIMD cache hit for:', id);
@@ -101,12 +111,10 @@ class PgAdapter {
             }
             try {
                 console.log('DEBUG: Fetching Client Metadata from:', id);
-                const response = await fetch(id, { signal: AbortSignal.timeout(5000) });
-                if (!response.ok) {
-                    console.error(`CIMD fetch failed (${id}): HTTP ${response.status}`);
-                    return undefined;
-                }
-                const metadata = await response.json();
+                // SSRF-guarded: https-only, host resolved and checked against
+                // non-public ranges, no redirects, JSON + size capped. See
+                // ssrf-guard.js. `id` is unauthenticated client input.
+                const metadata = await fetchJsonFromPublicUrl(id);
                 if (metadata.client_id !== id) {
                     console.error(`CIMD client_id mismatch (id=${id}, metadata.client_id=${metadata.client_id})`);
                     return undefined;

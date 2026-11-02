@@ -4,6 +4,7 @@ import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import pgAdapter, { queryWithRetry } from './adapter.js'; // Note .js extension
+import { guardedLookup, isBlockedIpLiteral } from './ssrf-guard.js';
 import path from 'path';
 import pg from 'pg';
 import dotenv from 'dotenv';
@@ -201,6 +202,19 @@ const configuration = {
     // client is allowed the grant type.
     async issueRefreshToken(ctx, client, code) {
         return client.grantTypeAllowed('refresh_token');
+    },
+    // SSRF guard for the provider's own server-side fetches. A CIMD client's
+    // metadata document can declare an attacker-chosen `jwks_uri`, which the
+    // provider fetches to verify `private_key_jwt` assertions. Route every such
+    // request through guardedLookup so it can't resolve to an internal host.
+    // (The provider already fetches with followRedirect: false.)
+    httpOptions(url) {
+        // DNS-name hosts are validated at lookup; IP-literal hosts bypass
+        // lookup, so reject a non-public literal here (throwing aborts the fetch).
+        if (isBlockedIpLiteral(url.hostname)) {
+            throw new Error(`blocked non-public host ${url.hostname}`);
+        }
+        return { dnsLookup: guardedLookup, signal: AbortSignal.timeout(5000) };
     },
     // Define custom scopes for MemoryBank
     scopes: ['openid', 'profile', 'email', 'offline_access', 'memories:read', 'memories:write'],
