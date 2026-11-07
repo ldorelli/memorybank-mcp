@@ -1297,12 +1297,12 @@ app.post('/api/memory', authMiddleware, async (req, res) => {
         const { content, tags } = req.body;
         if (!content) return res.status(400).json({ error: 'Content is required' });
 
-        // Logic matched with 'save_memory' tool
-        // Finding user:
-        const userRes = await pool.query("SELECT id FROM users LIMIT 1");
-        const userId = userRes.rows[0]?.id; // Fallback to first user for now (MVP)
-
-        if (!userId) return res.status(404).json({ error: 'No user found' });
+        // Scope to the authenticated caller. Previously this used
+        // `SELECT id FROM users LIMIT 1` (the first user in the table), so any
+        // authenticated token wrote into — and below, read/deleted — another
+        // user's memories: a cross-tenant access-control break.
+        const userId = req.user?.sub;
+        if (!userId) return res.status(401).json({ error: 'Unauthenticated' });
 
         const result = await pool.query(
             "INSERT INTO notes (user_id, content) VALUES ($1, $2) RETURNING id, created_at",
@@ -1329,9 +1329,8 @@ app.get('/api/memories', authMiddleware, async (req, res) => {
     try {
         const { query, limit = 10 } = req.query;
 
-        const userRes = await pool.query("SELECT id FROM users LIMIT 1");
-        const userId = userRes.rows[0]?.id;
-        if (!userId) return res.status(404).json({ error: 'No user found' });
+        const userId = req.user?.sub; // scope to the authenticated caller, not the first user
+        if (!userId) return res.status(401).json({ error: 'Unauthenticated' });
 
         let result;
         if (query) {
@@ -1360,8 +1359,8 @@ app.get('/api/memories', authMiddleware, async (req, res) => {
 app.delete('/api/memory/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const userRes = await pool.query("SELECT id FROM users LIMIT 1");
-        const userId = userRes.rows[0]?.id;
+        const userId = req.user?.sub; // scope to the authenticated caller, not the first user
+        if (!userId) return res.status(401).json({ error: 'Unauthenticated' });
 
         const result = await pool.query(
             "DELETE FROM notes WHERE id = $1 AND user_id = $2 RETURNING id",
