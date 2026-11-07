@@ -24,12 +24,17 @@ async function hashPassword(password) {
 }
 
 async function verifyPassword(password, storedHash) {
-    // If we have "placeholder_hash" from mvp, treat as invalid or skip
-    if (storedHash === 'placeholder_hash') return true; // BACKWARDS COMPATIBILITY for development
+    // Accounts carrying the MVP "placeholder_hash" sentinel have no real
+    // password set. Never treat that as a match — doing so let anyone log in to
+    // such an account with any password (auth bypass). Reject instead.
+    if (!storedHash || storedHash === 'placeholder_hash' || !storedHash.includes(':')) return false;
 
     const [salt, key] = storedHash.split(':');
     const keyBuffer = Buffer.from(key, 'hex');
     const derivedKey = await scrypt(password, salt, 64);
+    // timingSafeEqual throws on length mismatch; guard so a malformed stored
+    // hash is a clean "no match" rather than a 500.
+    if (keyBuffer.length !== derivedKey.length) return false;
     return crypto.timingSafeEqual(keyBuffer, derivedKey);
 }
 
@@ -401,31 +406,13 @@ const basicAuthConfiguration = {
 
 const oidcBasicAuth = new Provider(basicAuthIssuer, basicAuthConfiguration);
 
-// TEMP DIAGNOSTICS (remove once Google account linking is confirmed working).
-// oidc-provider is Koa-based, so the Express res.send hook on /token never sees
-// the response. This Koa middleware runs on the onion's way out and logs the
-// exact token-endpoint response body Google receives, plus the authorize
-// redirect Location (to confirm `code`/`state` are echoed). We also surface any
-// grant/authorization/server errors that otherwise stay swallowed.
-const diagLogger = (label) => async (ctx, next) => {
-    await next();
-    try {
-        if (ctx.path === '/token') {
-            const body = typeof ctx.body === 'string' ? ctx.body : JSON.stringify(ctx.body);
-            console.log(`DIAG[${label}] TOKEN ${ctx.method} -> ${ctx.status}: ${body ? body.slice(0, 1600) : '(empty)'}`);
-        } else if (ctx.path === '/auth' || ctx.path.startsWith('/auth')) {
-            console.log(`DIAG[${label}] AUTH ${ctx.method} -> ${ctx.status}; location: ${ctx.response.get('location') || '(none)'}`);
-        }
-    } catch (e) {
-        console.error(`DIAG[${label}] logger error:`, e.message);
-    }
-};
-
+// Surface grant/authorization/server errors that oidc-provider otherwise
+// swallows. These log error messages only — never token-endpoint response
+// bodies, which contain live access/refresh/id tokens.
 for (const [label, p] of [['main', oidc], ['legacy', oidcLegacy], ['basicauth', oidcBasicAuth]]) {
-    p.use(diagLogger(label));
-    p.on('server_error', (ctx, err) => console.error(`DIAG[${label}] server_error:`, err && err.message, err && err.stack));
-    p.on('grant.error', (ctx, err) => console.error(`DIAG[${label}] grant.error:`, err && err.message));
-    p.on('authorization.error', (ctx, err) => console.error(`DIAG[${label}] authorization.error:`, err && err.message, err && err.error_description));
+    p.on('server_error', (ctx, err) => console.error(`ERR[${label}] server_error:`, err && err.message, err && err.stack));
+    p.on('grant.error', (ctx, err) => console.error(`ERR[${label}] grant.error:`, err && err.message));
+    p.on('authorization.error', (ctx, err) => console.error(`ERR[${label}] authorization.error:`, err && err.message, err && err.error_description));
 }
 
 // Middleware to inject default scopes into authorization requests
